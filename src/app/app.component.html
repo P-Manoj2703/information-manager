@@ -1,0 +1,48 @@
+<div class="shell">
+  <aside class="rail">
+    <div class="rail__brand">
+      <span class="rail__wordmark">ESCRIBA</span>
+      <span class="rail__product">{{ 'app.name' | t }}</span>
+    </div>
+
+    <nav class="rail__nav">
+      @for (item of session.nav(); track item.path) {
+        <a class="rail__link" [routerLink]="item.path" routerLinkActive="rail__link--active">
+          <span>{{ item.labelKey | t }}</span>
+          @if (item.path === '/acknowledgements' && outstanding().length) {
+            <span class="rail__count">{{ outstanding().length }}</span>
+          }
+        </a>
+      }
+    </nav>
+
+    <div class="rail__foot">
+      <span class="rail__eyebrow">Prototyp · Rolle wechseln</span>
+      <div class="rail__roles">
+        @for (r of roles; track r.id) {
+          <button type="button" class="rail__role" [class.rail__role--on]="session.role() === r.id" (click)="session.setRole(r.id)">
+            {{ r.label }}
+          </button>
+        }
+      </div>
+
+      <span class="rail__eyebrow">Angemeldet als</span>
+      <div class="rail__user">
+        <span class="rail__avatar">{{ initials() }}</span>
+        <span class="rail__name">{{ session.displayName() }}</span>
+      </div>
+    </div>
+  </aside>
+
+  <div class="shell__main">
+    <header class="topbar">
+      <div class="topbar__spacer"></div>
+      <button type="button" class="topbar__lang" (click)="session.toggleLang()">
+        {{ session.lang() === 'de' ? 'DE' : 'EN' }}
+      </button>
+    </header>
+    <main class="content">
+      <router-outlet />
+    </main>
+  </div>
+</div>

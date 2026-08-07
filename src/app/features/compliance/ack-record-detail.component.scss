@@ -1,0 +1,20 @@
+.back { display:inline-block; margin-bottom:16px; font-size:13px; color:var(--fg-3); text-decoration:none;
+        &:hover { color:var(--escriba-teal-700); } }
+
+.card { background:#fff; border:1px solid var(--border-1); border-radius:var(--radius-card);
+        padding:28px 32px; max-width:820px; display:flex; flex-direction:column; gap:20px; }
+
+.head { display:flex; align-items:center; gap:14px;
+  h1 { margin:0; font-size:22px; font-weight:300; } }
+
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:20px 24px; }
+.field { display:flex; flex-direction:column; gap:6px; font-size:13px;
+  &.wide { grid-column:1 / -1; }
+  .label { font-weight:600; }
+  span:not(.label), a { font-size:14px; color:var(--fg-2); }
+  a { color:var(--escriba-teal-700); text-decoration:none; &:hover { text-decoration:underline; } }
+  .mono { font-family:var(--font-mono); }
+  .richtext { font-size:14px; color:var(--fg-2); line-height:1.6; }
+}
+
+.missing { color:var(--fg-3); font-size:14px; }

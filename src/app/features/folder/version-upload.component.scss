@@ -1,0 +1,39 @@
+.card { background:#fff; border:1px solid var(--border-1); border-radius:var(--radius-card);
+        padding:26px 28px; display:flex; flex-direction:column; gap:20px; max-width:1080px;
+        h2 { margin:0; font-size:20px; font-weight:300; } }
+
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px 24px; }
+label { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:600; }
+label.wide { grid-column:1 / -1; }
+input, textarea {
+  font:inherit; font-size:14px; font-weight:400; padding:10px 12px;
+  border:1px solid var(--border-1); border-radius:var(--radius-input); background:#fff;
+  &:disabled { background:var(--bg-2); color:var(--fg-3); }
+  &:focus-visible { outline:none; box-shadow:var(--focus-ring); border-color:var(--escriba-teal); }
+}
+
+.drop {
+  border: 2px dashed var(--border-2); border-radius: var(--radius-card); background: var(--bg-2);
+  padding: 32px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  strong { font-size: 15px; } span { font-size: 13px; color: var(--fg-3); }
+}
+.ghost { border:1px solid var(--border-2); background:#fff; color:var(--fg-2); cursor:pointer;
+         font:inherit; font-size:13px; font-weight:600; padding:8px 16px; border-radius:var(--radius-pill); }
+
+.files { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;
+  li { display:flex; align-items:center; gap:14px; padding:14px 16px; border:1px solid var(--border-1);
+       border-radius:10px; background:#fff;
+       &.error { border-color:#f3d6d6; background:#fdf7f7; } }
+}
+.kind { width:44px; height:56px; display:grid; place-items:center; background:#fff;
+        border:1px solid var(--border-1); border-radius:4px; font-size:9px; font-weight:700; color:var(--fg-3); }
+.meta { display:flex; flex-direction:column; gap:4px; min-width:0;
+  small { font-size:12px; color:var(--fg-3); }
+  small.msg { color:var(--danger); font-family:var(--font-mono); font-size:11px; } }
+
+.denied { background:#fdf0f0; border:1px solid #f3d6d6; border-radius:var(--radius-input);
+          padding:14px 16px; color:var(--danger); font-family:var(--font-mono); font-size:12px; }
+.count { margin:0; font-size:12px; color:var(--fg-3); }
+footer { display:flex; justify-content:flex-end; padding-top:14px; border-top:1px solid var(--border-1); }
+.primary { border:0; cursor:pointer; font:inherit; font-size:14px; font-weight:600;
+           background:var(--escriba-teal); color:var(--navy-900); padding:12px 22px; border-radius:var(--radius-pill); }

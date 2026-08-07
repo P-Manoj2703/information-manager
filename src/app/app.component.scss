@@ -1,0 +1,53 @@
+.shell { display: flex; height: 100vh; overflow: hidden; }
+.shell__main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+.rail {
+  width: 244px;
+  flex: 0 0 244px;
+  background: var(--navy-900);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-5) 0 var(--space-4);
+
+  &__brand { padding: 0 var(--space-5) var(--space-5); display: flex; flex-direction: column; gap: var(--space-1); }
+  &__wordmark { font-size: 19px; font-weight: 800; letter-spacing: 0.14em; color: var(--on-dark-1); }
+  &__product { font-size: 12px; color: var(--on-dark-3); }
+
+  &__nav { display: flex; flex-direction: column; gap: 2px; padding: 0 var(--space-3); }
+  &__link {
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: 10px 14px; border-radius: var(--radius-md);
+    font-size: 14px; color: var(--on-dark-2);
+    transition: background var(--dur-fast) var(--ease-out);
+  }
+  &__link--active { background: var(--navy-500); color: var(--on-dark-1); box-shadow: inset 0 0 0 1px var(--border-dark-strong); }
+  &__count { margin-left: auto; background: var(--escriba-teal); color: var(--navy-900); border-radius: var(--radius-pill); padding: 1px 8px; font-size: 11px; font-weight: 700; }
+
+  &__foot { margin-top: auto; padding: var(--space-4) var(--space-5) 0; border-top: 1px solid var(--border-dark); display: flex; flex-direction: column; gap: var(--space-2); }
+  &__eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; color: var(--on-dark-4); }
+  &__roles { display: flex; flex-direction: column; gap: 2px; margin-bottom: var(--space-2); }
+  &__role {
+    text-align: left; border: 0; background: transparent; cursor: pointer;
+    padding: 7px 12px; border-radius: var(--radius-md);
+    font-size: 12px; font-weight: 600; color: var(--on-dark-3);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  &__role--on { background: var(--escriba-teal); color: var(--navy-900); }
+
+  &__user { display: flex; align-items: center; gap: 10px; }
+  &__avatar { width: 32px; height: 32px; border-radius: var(--radius-pill); background: var(--navy-500); border: 1px solid var(--border-dark-strong); color: var(--escriba-teal); font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+  &__name { font-size: 13px; color: var(--on-dark-1); }
+}
+
+.topbar {
+  height: 64px; flex: 0 0 64px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border-1);
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: 0 var(--space-6);
+
+  &__spacer { flex: 1; }
+  &__lang { border: 1px solid var(--border-1); background: var(--bg-1); border-radius: var(--radius-pill); padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; }
+}
+
+.content { flex: 1; overflow-y: auto; padding: var(--space-6); }

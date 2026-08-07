@@ -1,0 +1,60 @@
+export const DE = {
+  'app.name': 'Information Manager',
+  'nav.myAcknowledgements': 'Meine Kenntnisnahmen',
+  'nav.documents': 'Dokumente',
+  'nav.folders': 'Informationsordner',
+  'nav.acknowledgements': 'Kenntnisnahmen',
+  'nav.templates': 'Verteilervorlagen',
+  'nav.estate': 'Übersicht',
+  'nav.teams': 'Teams',
+  'nav.users': 'Benutzer',
+  'nav.monitoring': 'Monitoring',
+
+  'status.Pending': 'Offen',
+  'status.Overdue': 'Überfällig',
+  'status.Done': 'Erledigt',
+  'status.Obsolete': 'Nicht mehr erforderlich',
+  'status.None': 'Keine',
+  'status.Draft': 'Entwurf',
+  'status.Active': 'Aktiv',
+  'status.Inactive': 'Inaktiv',
+
+  'ack.confirmButton': 'Kenntnisnahme bestätigen',
+  'ack.confirmHeadline': 'Bestätigen Sie, dass Sie dieses Dokument gelesen haben.',
+  'ack.commentOptional': 'Kommentar (optional)',
+  'ack.perVersion': 'Die Kenntnisnahme gilt für diese Version. Bei einer neuen Version werden Sie erneut gefragt.',
+  'ack.message': 'Nachricht des Herausgebers',
+  'ack.deadline': 'Frist',
+  'ack.noLongerRequired': 'Nicht mehr erforderlich',
+  'ack.receiptTitle': 'Kenntnisnahme bestätigt',
+
+  'folder.new': 'Neuer Informationsordner',
+  'folder.frozenTitle': 'Dieser Ordner ist veröffentlicht und gesperrt',
+  'folder.frozenBody': 'Nur die Beschreibung ist bearbeitbar. Alle weiteren Änderungen erfordern den Weg Deaktivieren → Bearbeiten → Aktivieren.',
+  'folder.newVersion': 'Neue Version',
+  'folder.editPublished': 'Veröffentlichten Ordner ändern',
+
+  'audience.resolvesTo': 'Ergibt',
+  'audience.people': 'Personen',
+  'audience.hierarchy': 'inkl. Unterteams',
+  'audience.direct': 'Direkt',
+  'audience.viaTeam': 'Über Team',
+  'audience.viaHierarchy': 'Über Hierarchie',
+  'audience.templateCopied': 'Vorlage angewendet — Mitglieder kopiert. Spätere Änderungen an der Vorlage wirken sich nicht auf diesen Ordner aus.',
+
+  'action.remindNow': 'Erinnern',
+  'action.override': 'Status ändern',
+  'action.export': 'CSV exportieren',
+  'action.cancel': 'Abbrechen',
+  'action.back': 'Zurück',
+
+  'error.pdfOnly': 'Operation Failed: Only PDF files are allowed. Uploaded file: {file}',
+  'error.recipientBlocked': 'Operation Failed: Information Receiver role is not allowed to perform this action.',
+  'error.teamDuplicateHierarchy': "The team '{team}' has already been included because of the parent team '{parent}' selected with hierarchy. Please delete {team} Team from organizational units",
+  'error.teamAlreadyLinked': "The team '{team}' is already linked to this Information Folder.",
+  'error.syncNoVersion': 'Sync aborted: no Active Document Version found for folder ID: {id}. Ensure an active version exists before triggering a sync.',
+  'error.syncNoUsers': 'Sync aborted: no users found for folder ID: {id}. Ensure at least one user or team is linked to this folder before triggering a sync.',
+  'error.activateNeedsVersion': 'At least one Document Version is required to activate'
+} as const;
+
+export type TranslationKey = keyof typeof DE;

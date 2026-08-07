@@ -1,0 +1,78 @@
+<section class="audience">
+  <header class="audience__head">
+    <h2>{{ 'audience.resolvesTo' | t }}</h2>
+    <div class="audience__counter">
+      <span class="audience__total">{{ resolution().total }}</span>
+      <span>{{ 'audience.people' | t }}</span>
+      @if (resolution().duplicatesRemoved) {
+        <small>{{ resolution().duplicatesRemoved }} doppelt erfasst — einmal gezählt</small>
+      }
+    </div>
+  </header>
+
+  @if (templateApplied()) {
+    <p class="audience__notice">{{ 'audience.templateCopied' | t }}</p>
+  }
+
+  <div class="audience__panels">
+    <div class="panel">
+      <div class="panel__head"><span>Organisationseinheiten</span><span>{{ links().length }}</span></div>
+
+      @for (row of linkedRows(); track row.link.id) {
+        <div class="panel__row">
+          <div class="panel__name">
+            <strong>{{ row.team.name }}</strong>
+            <small>
+              {{ row.team.memberCount }} direkt
+              @if (row.childCount) { · {{ row.childCount }} aus Unterteams }
+            </small>
+          </div>
+
+          <label class="switch">
+            <input type="checkbox" [checked]="row.link.includeTeamHierarchy" (change)="toggleHierarchy(row.link)">
+            <span>{{ 'audience.hierarchy' | t }}</span>
+          </label>
+
+          <button type="button" class="panel__remove" (click)="removeTeam(row.link)" aria-label="Entfernen">×</button>
+
+          @if (row.children.length) {
+            <ul class="panel__children">
+              @for (child of row.children; track child.id) {
+                <li><span>{{ child.name }}</span><span>automatisch verknüpft · {{ child.memberCount }}</span></li>
+              }
+            </ul>
+          }
+
+          @if (duplicateWarning(row.link); as warning) {
+            <p class="panel__error">{{ warning }}</p>
+          }
+        </div>
+      }
+
+      <div class="panel__add">
+        @for (team of addable(); track team.id) {
+          <button type="button" class="panel__chip" (click)="addTeam(team)">+ {{ team.name }}</button>
+        }
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel__head"><span>Personen</span><span>{{ resolution().total }}</span></div>
+      <ul class="roster">
+        @for (member of resolution().members; track member.userId) {
+          <li class="roster__row">
+            <span class="roster__name">{{ member.displayName }}</span>
+            <span class="roster__team">{{ member.teamName }}</span>
+            <span class="roster__prov roster__prov--{{ member.provenance }}">
+              @switch (member.provenance) {
+                @case ('direct') { {{ 'audience.direct' | t }} }
+                @case ('team') { {{ 'audience.viaTeam' | t }} }
+                @default { {{ 'audience.viaHierarchy' | t }} }
+              }
+            </span>
+          </li>
+        }
+      </ul>
+    </div>
+  </div>
+</section>

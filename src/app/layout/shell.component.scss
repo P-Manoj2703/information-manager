@@ -1,0 +1,62 @@
+.shell { display: flex; min-height: 100vh; }
+
+.rail {
+  width: 244px; flex: 0 0 244px; background: var(--navy-900);
+  display: flex; flex-direction: column; padding: 24px 0 16px;
+
+  &__brand { padding: 0 24px 24px; display: flex; flex-direction: column; gap: 4px; }
+  &__wordmark { font-size: 19px; font-weight: 800; letter-spacing: 0.14em; color: #fff; }
+  &__sub { font-size: 12px; color: var(--on-dark-3); }
+
+  &__nav { display: flex; flex-direction: column; gap: 2px; padding: 0 12px; }
+  &__link {
+    padding: 10px 14px; border-radius: 8px; font-size: 14px; color: var(--on-dark-2);
+    transition: background 120ms ease;
+    &--on { background: var(--navy-500); color: #fff; box-shadow: inset 0 0 0 1px var(--border-dark-strong); }
+    &:hover { color: #fff; }
+  }
+
+  &__foot {
+    margin-top: auto; padding: 16px 24px 0; border-top: 1px solid var(--border-dark);
+    display: flex; flex-direction: column; gap: 8px;
+    .eyebrow { color: var(--on-dark-4); }
+  }
+  &__roles { display: flex; flex-direction: column; gap: 2px; }
+  &__role {
+    text-align: left; border: 0; background: none; cursor: pointer;
+    padding: 7px 12px; border-radius: 8px; font: inherit; font-size: 12px; font-weight: 600;
+    color: var(--on-dark-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    &--on { background: var(--escriba-teal); color: var(--navy-900); }
+  }
+  &__user { display: flex; align-items: center; gap: 10px; padding-top: 8px; }
+  &__avatar {
+    width: 32px; height: 32px; border-radius: var(--radius-pill); background: var(--navy-500);
+    border: 1px solid var(--border-dark-strong); color: var(--escriba-teal);
+    font-size: 12px; font-weight: 700; display: grid; place-items: center;
+  }
+  &__userName { font-size: 13px; color: #fff; }
+  &__logout {
+    margin-top: 8px; text-align: left; border: 0; background: none; cursor: pointer;
+    padding: 7px 12px; border-radius: 8px; font: inherit; font-size: 12px; font-weight: 600;
+    color: var(--on-dark-3);
+    &:hover { color: #fff; background: var(--navy-500); }
+  }
+}
+
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+.topbar {
+  height: 64px; flex: 0 0 64px; background: #fff; border-bottom: 1px solid var(--border-1);
+  display: flex; align-items: center; justify-content: flex-end; padding: 0 32px;
+
+  &__lang {
+    display: flex; gap: 2px; border: 1px solid var(--border-1); border-radius: var(--radius-pill); padding: 2px;
+    button {
+      border: 0; background: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700;
+      padding: 5px 11px; border-radius: var(--radius-pill); color: var(--fg-3);
+      &.on { background: var(--navy-900); color: #fff; }
+    }
+  }
+}
+
+.content { flex: 1; padding: 28px 32px 64px; overflow-y: auto; }

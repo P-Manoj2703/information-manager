@@ -1,0 +1,15 @@
+@use 'tokens';
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg-2); }
+body { font-family: var(--font-sans); color: var(--fg-1); font-size: 14px; }
+
+a { color: var(--escriba-teal-deep); text-decoration: none; }
+a:hover { color: var(--escriba-teal); }
+
+:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-input); }
+
+.card { background: #fff; border: 1px solid var(--border-1); border-radius: var(--radius-card); }
+.eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; color: var(--fg-3); }
+.mono { font-family: var(--font-mono); }
+.tabular { font-variant-numeric: tabular-nums; }

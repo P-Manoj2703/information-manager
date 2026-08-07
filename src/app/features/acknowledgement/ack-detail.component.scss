@@ -1,0 +1,39 @@
+.layout { display: flex; gap: 24px; align-items: flex-start; max-width: 1280px; }
+.col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.back { font-size: 13px; font-weight: 600; }
+
+.card { background: #fff; border: 1px solid var(--border-1); border-radius: var(--radius-card); }
+.message {
+  padding: 28px 32px; display: flex; flex-direction: column; gap: 14px;
+  &__meta { display: flex; align-items: center; gap: 10px; }
+  h1 { margin: 0; font-size: 32px; font-weight: 300; letter-spacing: -0.005em; line-height: 1.2; }
+}
+.richtext { font-size: 15px; line-height: 1.7; color: var(--fg-2); max-width: 64ch; }
+
+.task {
+  flex: 0 0 344px; position: sticky; top: 0;
+  background: var(--navy-900); border-radius: var(--radius-card); padding: 26px 24px;
+  display: flex; flex-direction: column; gap: 18px;
+
+  h2 { margin: 0; font-size: 20px; font-weight: 300; color: #fff; line-height: 1.35; }
+  .eyebrow--teal { color: var(--escriba-teal); }
+  dl { margin: 0; padding: 14px 0; border-top: 1px solid var(--border-dark); border-bottom: 1px solid var(--border-dark); display: flex; flex-direction: column; gap: 10px; }
+  dl > div { display: flex; justify-content: space-between; font-size: 13px; }
+  dt { color: var(--on-dark-3); }
+  dd { margin: 0; color: #fff; }
+  label { display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: var(--on-dark-3); }
+  textarea {
+    background: var(--navy-600); border: 1px solid var(--border-dark-strong); border-radius: var(--radius-input);
+    padding: 10px 12px; color: #fff; font: inherit; font-size: 13px; resize: vertical;
+  }
+  .note { margin: 0; font-size: 12px; color: var(--on-dark-3); line-height: 1.6; }
+}
+
+.confirm {
+  border: 0; cursor: pointer; font: inherit; font-size: 15px; font-weight: 600;
+  background: var(--escriba-teal); color: var(--navy-900);
+  padding: 14px 20px; border-radius: var(--radius-pill);
+  transition: background 120ms ease, box-shadow 120ms ease;
+  &:hover:not(:disabled) { background: #00ffe9; box-shadow: 0 8px 32px rgba(11,197,181,.22); }
+  &:disabled { opacity: .6; cursor: progress; }
+}

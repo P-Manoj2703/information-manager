@@ -1,0 +1,51 @@
+// ESCRIBA design tokens — mirrors _ds/…/colors_and_type.css
+:root {
+  --escriba-teal: #0bc5b5;
+  --escriba-teal-deep: #00a092;
+  --escriba-teal-700: #007a70;
+  --escriba-yellow: #e8e649;
+  --escriba-blue: #2b7faf;
+
+  --navy-900: #06131e;
+  --navy-800: #0a1620;
+  --navy-600: #0b1d2c;
+  --navy-500: #123047;
+
+  --fg-1: #0b1823;
+  --fg-2: #4a5565;
+  --fg-3: #6f7c86;
+  --fg-4: #9aa5ae;
+
+  --on-dark-2: #c5d3e0;
+  --on-dark-3: #6a96bb;
+  --on-dark-4: #52738f;
+
+  --bg-2: #f2f3f3;
+  --bg-3: #e5e7eb;
+  --bg-mint: #d9ede9;
+
+  --border-1: #e5e7eb;
+  --border-2: #d2d7dc;
+  --border-dark: rgba(106, 150, 187, 0.18);
+  --border-dark-strong: rgba(106, 150, 187, 0.32);
+
+  --success: #00a092;
+  --warning: #c07a12;
+  --danger: #c0392b;
+
+  --radius-card: 12px;
+  --radius-input: 8px;
+  --radius-pill: 999px;
+
+  --shadow-xs: 0 2px 3px rgba(58, 60, 65, 0.06);
+  --shadow-sm: 0 6px 12px rgba(58, 60, 65, 0.08);
+  --shadow-md: 0 8px 16px rgba(58, 60, 65, 0.1);
+  --shadow-lg: 0 16px 24px -4px rgba(58, 60, 65, 0.16);
+  --focus-ring: 0 0 0 3px rgba(11, 197, 181, 0.4);
+
+  --font-sans: 'Open Sans', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', monospace;
+
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-6: 24px; --space-8: 32px; --space-12: 48px; --space-16: 64px;
+}

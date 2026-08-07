@@ -1,0 +1,60 @@
+import { TranslationKey } from './de';
+
+export const EN: Record<TranslationKey, string> = {
+  'app.name': 'Information Manager',
+  'nav.myAcknowledgements': 'My acknowledgements',
+  'nav.documents': 'Documents',
+  'nav.folders': 'Information folders',
+  'nav.acknowledgements': 'Acknowledgements',
+  'nav.templates': 'Distribution templates',
+  'nav.estate': 'Estate overview',
+  'nav.teams': 'Teams',
+  'nav.users': 'Users',
+  'nav.monitoring': 'Monitoring',
+
+  'status.Pending': 'Pending',
+  'status.Overdue': 'Overdue',
+  'status.Done': 'Done',
+  'status.Obsolete': 'Obsolete',
+  'status.None': 'None',
+  'status.Draft': 'Draft',
+  'status.Active': 'Active',
+  'status.Inactive': 'Inactive',
+
+  'ack.confirmButton': 'Confirm acknowledgement',
+  'ack.confirmHeadline': 'Confirm that you have read this document.',
+  'ack.commentOptional': 'Comment (optional)',
+  'ack.perVersion': 'Acknowledgement applies to this version. A new version asks you again.',
+  'ack.message': 'Message from the publisher',
+  'ack.deadline': 'Deadline',
+  'ack.noLongerRequired': 'No longer required',
+  'ack.receiptTitle': 'Acknowledgement confirmed',
+
+  'folder.new': 'New information folder',
+  'folder.frozenTitle': 'This folder is published and frozen',
+  'folder.frozenBody': 'Only the description is editable. Any further change requires deactivate → edit → activate.',
+  'folder.newVersion': 'New version',
+  'folder.editPublished': 'Edit published folder',
+
+  'audience.resolvesTo': 'Resolves to',
+  'audience.people': 'people',
+  'audience.hierarchy': 'incl. sub-teams',
+  'audience.direct': 'Direct',
+  'audience.viaTeam': 'Via team',
+  'audience.viaHierarchy': 'Via hierarchy',
+  'audience.templateCopied': 'Template applied — members copied. Later changes to the template will not flow through to this folder.',
+
+  'action.remindNow': 'Remind',
+  'action.override': 'Override',
+  'action.export': 'Export CSV',
+  'action.cancel': 'Cancel',
+  'action.back': 'Back',
+
+  'error.pdfOnly': 'Operation Failed: Only PDF files are allowed. Uploaded file: {file}',
+  'error.recipientBlocked': 'Operation Failed: Information Receiver role is not allowed to perform this action.',
+  'error.teamDuplicateHierarchy': "The team '{team}' has already been included because of the parent team '{parent}' selected with hierarchy. Please delete {team} Team from organizational units",
+  'error.teamAlreadyLinked': "The team '{team}' is already linked to this Information Folder.",
+  'error.syncNoVersion': 'Sync aborted: no Active Document Version found for folder ID: {id}. Ensure an active version exists before triggering a sync.',
+  'error.syncNoUsers': 'Sync aborted: no users found for folder ID: {id}. Ensure at least one user or team is linked to this folder before triggering a sync.',
+  'error.activateNeedsVersion': 'At least one Document Version is required to activate'
+};
