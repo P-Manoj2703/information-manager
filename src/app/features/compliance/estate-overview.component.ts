@@ -15,7 +15,7 @@ interface FolderTile {
   acknowledgmentStatus: AckStatus;
 }
 
-const BUCKET_STATUSES: AckStatus[] = ['None', 'Pending', 'Overdue', 'Done', 'Obsolete'];
+const BUCKET_STATUSES: AckStatus[] = ['Pending', 'Overdue', 'Done'];
 
 /**
  * UC-CMP-01 — portfolio view; Compliance's real ACL sees every folder regardless of owner
@@ -31,10 +31,9 @@ const BUCKET_STATUSES: AckStatus[] = ['None', 'Pending', 'Overdue', 'Done', 'Obs
  * (acknowledgement_textfield_information_folder_name) but not its id, and folder names are
  * unique in this tenant, so the join is reliable without an extra per-folder request.
  *
- * Status buckets cover all five real values (None/Pending/Overdue/Done/Obsolete) as a
- * client-side grouping of this same real folder list by its own acknowledgment_status field,
- * filtering the grid below in place — not a separate ECAP view per bucket, and not a
- * navigation away from this page.
+ * Status buckets (Pending/Overdue/Done) are a client-side grouping of this same real folder
+ * list by its own acknowledgment_status field, filtering the grid below in place — not a
+ * separate ECAP view per bucket, and not a navigation away from this page.
  */
 @Component({
   selector: 'im-estate-overview',
