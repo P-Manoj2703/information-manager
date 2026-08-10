@@ -25,6 +25,7 @@
   h2 { margin: 0; font-size: 20px; font-weight: 300; }
 }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px 24px; }
+.error { margin: 0; font-size: 13px; color: var(--danger, #c0392b); }
 
 label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }
 label small { font-weight: 400; color: var(--fg-3); }

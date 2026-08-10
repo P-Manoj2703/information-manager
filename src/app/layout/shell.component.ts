@@ -1,5 +1,7 @@
 import { Component, computed, inject } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { filter } from 'rxjs';
 import { LanguageService } from '@core/i18n/language.service';
 import { DictKey } from '@core/i18n/dictionary';
 import { Role } from '@core/models';
@@ -32,7 +34,7 @@ const NAV: Record<Role, NavItem[]> = {
   styleUrl: './shell.component.scss',
   template: `
     <div class="shell">
-      @if (!session.loggedOut()) {
+      @if (showChrome()) {
         <aside class="rail">
           <div class="rail__brand">
             <span class="rail__wordmark">ESCRIBA</span>
@@ -67,7 +69,7 @@ const NAV: Record<Role, NavItem[]> = {
       }
 
       <div class="main">
-        @if (!session.loggedOut()) {
+        @if (showChrome()) {
           <header class="topbar">
             <div class="topbar__lang" role="group" aria-label="Sprache">
               <button type="button" [class.on]="lang.isGerman()" (click)="lang.set('de')">DE</button>
@@ -86,6 +88,20 @@ export class ShellComponent {
   private readonly router = inject(Router);
   readonly roles: Role[] = ['kenntnissnahmeempfaenger', 'informationsbereitsteller', 'complianceverantwortlicher'];
   readonly nav = computed(() => NAV[this.session.role()]);
+
+  /**
+   * Route-based, not session-based: session.loggedOut() depends on the real
+   * ECAP startPage signal resolving, which can stay unresolved while still on
+   * /login (no backend in this environment) — that left the rail rendered
+   * behind the login card. The current URL is known immediately.
+   */
+  private readonly currentUrl = toSignal(
+    this.router.events.pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd)),
+    { initialValue: null }
+  );
+  readonly showChrome = computed(() =>
+    !(this.currentUrl()?.urlAfterRedirects ?? this.router.url).startsWith('/login'));
+
   readonly initials = computed(() =>
     this.session.session().displayName.split(' ').slice(-1)[0].slice(0, 2).toUpperCase());
 

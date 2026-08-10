@@ -1,23 +1,44 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { Acknowledgement, AckStatus } from '@core/models';
-import { DataPort } from '@core/services/data.port';
-import { SessionService } from '@core/services/session.service';
-import { AcknowledgementService } from '@core/services/acknowledgement.service';
+import { RecordListDirective, RecordsPayloadMeta, RecordsResponseMeta } from '@escriba/cui-ecap-runtime';
+import { AckStatus } from '@core/models';
 import { LanguageService } from '@core/i18n/language.service';
+import { ACKNOWLEDGEMENT_VIEW_ID, OBJECT_ID } from '@core/objects';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
 import { FilterChipsComponent, Chip } from '@shared/ui/filter-chips.component';
 import { EmptyStateComponent } from '@shared/ui/empty-state.component';
 
 const ORDER: Record<AckStatus, number> = { Overdue: 0, Pending: 1, Done: 2, Obsolete: 3, None: 4 };
 
+interface TaskRow {
+  id: string;
+  acknowledgment_picklist_status: AckStatus;
+  documentVersionLabel: string;
+  acknowledgement_date_deadline_date: string;
+  folderName: string;
+}
+
+/**
+ * The Information Receiver's own "My tasks" list — real ECAP data via the same
+ * libEcapRuntimeRecordList + real saved-view mechanism already proven for the compliance
+ * chase table (My Pending/My Overdue/My Completed Acknowledgments). The generic
+ * rest/record/{oid}?filter=... list endpoint is unreliable for this object regardless of
+ * page size (confirmed live); ListDataPage, what this directive calls, is not.
+ */
 @Component({
   selector: 'im-task-list',
   standalone: true,
-  imports: [RouterLink, StatusBadgeComponent, FilterChipsComponent, EmptyStateComponent],
+  imports: [RouterLink, RecordListDirective, StatusBadgeComponent, FilterChipsComponent, EmptyStateComponent],
   styleUrl: './task-list.component.scss',
   template: `
+    @for (payload of payloads(); track $index) {
+      <ng-container
+        [libEcapRuntimeRecordList]="payload"
+        (apiResponseEvent)="onResponse($index, $event)"
+        (apiErrorEvent)="onError($index, $event)">
+      </ng-container>
+    }
+
     <section class="page">
       <div class="kpis">
         <div class="kpi"><span class="eyebrow">{{ lang.isGerman() ? 'OFFEN' : 'OPEN' }}</span><strong>{{ counts().open }}</strong></div>
@@ -33,11 +54,10 @@ const ORDER: Record<AckStatus, number> = { Overdue: 0, Pending: 1, Done: 2, Obso
             <div class="item__body">
               <div class="item__meta">
                 <im-status-badge [status]="a.acknowledgment_picklist_status" />
-                <span class="mono chip">{{ a.documentversion_record }}</span>
+                <span class="mono chip">{{ a.documentVersionLabel }}</span>
                 <span class="due" [class.due--late]="a.acknowledgment_picklist_status === 'Overdue'">{{ due(a) }}</span>
               </div>
-              <h2>{{ a.acknowledgement_textfield_information_folder_name }}</h2>
-              <p [innerHTML]="a.acknowledgment_richtextarea_user_information"></p>
+              <h2>{{ a.folderName }}</h2>
             </div>
             <a class="btn" [routerLink]="['/tasks', a.id]">
               {{ lang.isGerman() ? 'Öffnen und bestätigen' : 'Open and confirm' }}
@@ -52,16 +72,53 @@ const ORDER: Record<AckStatus, number> = { Overdue: 0, Pending: 1, Done: 2, Obso
   `
 })
 export class TaskListComponent {
-  private readonly data = inject(DataPort);
-  private readonly session = inject(SessionService);
-  private readonly acks = inject(AcknowledgementService);
   readonly lang = inject(LanguageService);
 
   /** Deliberate deviation: the tenant default view is My Completed. */
   readonly filter = signal<string>('open');
 
-  private readonly all = toSignal(
-    this.data.acknowledgements({ userId: this.session.session().userId }), { initialValue: [] as Acknowledgement[] });
+  readonly payloads = computed<RecordsPayloadMeta[]>(() => [
+    ACKNOWLEDGEMENT_VIEW_ID.myPending, ACKNOWLEDGEMENT_VIEW_ID.myOverdue, ACKNOWLEDGEMENT_VIEW_ID.myCompleted
+  ].map((id) => ({
+    id, object_id: OBJECT_ID.acknowledgement,
+    page: 0, pageSize: 100, sortBy: 'date_modified', sortOrder: 'desc',
+    getTotalRecordCount: false
+  })));
+
+  private readonly partials = signal<TaskRow[][]>([]);
+  private readonly all = computed(() => this.partials().flat());
+
+  constructor() {
+    effect(() => {
+      const count = this.payloads().length;
+      this.partials.set(Array.from({ length: count }, () => []));
+    }, { allowSignalWrites: true });
+  }
+
+  onResponse(index: number, response: RecordsResponseMeta): void {
+    const mapped = (response.listData?.recordsList ?? []).map((raw: any): TaskRow => ({
+      id: raw.id,
+      // ListDataPage's real shape: picklists as plain strings, lookups as {name, id} — not the generic REST endpoint's {displayValue, content} shape.
+      acknowledgment_picklist_status: (raw.acknowledgment_picklist_status ?? 'None') as AckStatus,
+      documentVersionLabel: raw.documentversion_record?.name ?? raw.documentversion_record ?? '',
+      acknowledgement_date_deadline_date: raw.acknowledgement_date_deadline_date ?? '',
+      folderName: raw.acknowledgement_textfield_information_folder_name ?? raw.acknowledgement_lookup_information_folder?.name ?? ''
+    }));
+    this.partials.update((partials) => {
+      const next = [...partials];
+      next[index] = mapped;
+      return next;
+    });
+  }
+
+  onError(index: number, error: unknown): void {
+    console.error('Failed to load my Acknowledgement tasks', error);
+    this.partials.update((partials) => {
+      const next = [...partials];
+      next[index] = [];
+      return next;
+    });
+  }
 
   readonly counts = computed(() => {
     const s = this.all().map((a) => a.acknowledgment_picklist_status);
@@ -72,7 +129,7 @@ export class TaskListComponent {
     };
   });
 
-  /** Only the 4 categories recipients care about: Open/Pending, Overdue, Done. No "All", no Obsolete/None. */
+  /** Only the 3 categories recipients care about: Open/Pending, Overdue, Done. No "All", no Obsolete/None. */
   readonly chips = computed<Chip[]>(() => [
     { id: 'open', label: this.lang.t('pending') },
     { id: 'overdue', label: this.lang.t('overdue') },
@@ -93,12 +150,17 @@ export class TaskListComponent {
         a.acknowledgement_date_deadline_date.localeCompare(b.acknowledgement_date_deadline_date));
   });
 
-  due(a: Acknowledgement): string {
+  due(a: TaskRow): string {
     const de = this.lang.isGerman();
     if (a.acknowledgment_picklist_status === 'Overdue') {
-      const n = this.acks.daysOverdue(a);
+      const n = this.daysOverdue(a.acknowledgement_date_deadline_date);
       return de ? `Seit ${n} Tagen überfällig` : `Overdue by ${n} days`;
     }
     return (de ? 'Frist ' : 'Due ') + this.lang.date(a.acknowledgement_date_deadline_date);
+  }
+
+  private daysOverdue(deadline: string, today = new Date()): number {
+    const due = new Date(deadline);
+    return Math.max(0, Math.floor((today.getTime() - due.getTime()) / 86_400_000));
   }
 }

@@ -10,7 +10,6 @@ td { padding:14px 20px; border-top:1px solid var(--border-1); font-size:13px; ve
 .person { display:inline-block; text-decoration:none; color:inherit;
   b { color:var(--escriba-teal-700); }
   &:hover b { text-decoration:underline; } }
-.actions { display:flex; gap:6px; justify-content:flex-end; }
 .ghost { border:1px solid var(--border-2); background:#fff; color:var(--fg-2); cursor:pointer;
          font:inherit; font-size:12px; font-weight:600; padding:5px 11px; border-radius:var(--radius-pill); white-space:nowrap; }
-.readonly { margin-top:12px; font-size:12px; color:var(--fg-3); }
+.empty { text-align:center; color:var(--fg-3); padding:24px; }

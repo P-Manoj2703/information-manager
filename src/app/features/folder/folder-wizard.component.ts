@@ -1,8 +1,15 @@
 import { Component, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { catchError, map, of } from 'rxjs';
 import { RouterLink } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { RecordCreateDirective } from '@escriba/cui-ecap-runtime';
+import { INFORMATION_FOLDER_LAYOUT_ID, OBJECT_ID } from '@core/objects';
 import { LanguageService } from '@core/i18n/language.service';
+import { SessionService } from '@core/services/session.service';
 import { AudienceBuilderComponent } from '@features/distribution/audience-builder.component';
+import { MultiSelectDropdownComponent } from '@shared/ui/multi-select-dropdown.component';
 import { VersionUploadComponent } from './version-upload.component';
 import { ActivateDialogComponent } from './activate-dialog.component';
 
@@ -13,7 +20,7 @@ import { ActivateDialogComponent } from './activate-dialog.component';
 @Component({
   selector: 'im-folder-wizard',
   standalone: true,
-  imports: [RouterLink, ReactiveFormsModule, AudienceBuilderComponent, VersionUploadComponent, ActivateDialogComponent],
+  imports: [RouterLink, ReactiveFormsModule, RecordCreateDirective, AudienceBuilderComponent, VersionUploadComponent, ActivateDialogComponent, MultiSelectDropdownComponent],
   styleUrl: './folder-wizard.component.scss',
   template: `
     <a class="back" routerLink="/folders">← {{ lang.t('folders') }}</a>
@@ -27,10 +34,23 @@ import { ActivateDialogComponent } from './activate-dialog.component';
       }
     </ol>
 
+    @if (createPayload()) {
+      <ng-container
+        [libEcapRuntimeRecordCreate]="createPayload()"
+        [objectId]="OBJECT_ID.informationFolder"
+        (apiResponseEvent)="onCreateResponse($event)"
+        (apiErrorEvent)="onCreateError($event)">
+      </ng-container>
+    }
+
     @switch (step()) {
       @case (1) {
         <form class="card" [formGroup]="form" (ngSubmit)="saveDraft()">
           <h2>{{ lang.isGerman() ? 'Metadaten' : 'Metadata' }}</h2>
+
+          @if (createError()) {
+            <p class="error">{{ createError() }}</p>
+          }
           <div class="grid">
             <label>{{ lang.isGerman() ? 'Kurzname' : 'Short name' }}
               <input formControlName="information_folder_textfield_short_name">
@@ -52,16 +72,18 @@ import { ActivateDialogComponent } from './activate-dialog.component';
               <input formControlName="information_folder_textfield_document_category">
             </label>
             <label>{{ lang.isGerman() ? 'Dokumentsprache' : 'Document language' }}
-              <select multiple formControlName="information_folder_multi_select_picklist_document_language">
-                <option value="de">Deutsch</option>
-                <option value="en">English</option>
-              </select>
+              <im-multi-select-dropdown [options]="documentLanguages()"
+                formControlName="information_folder_multi_select_picklist_document_language" />
             </label>
             <label>{{ lang.isGerman() ? 'Status' : 'Status' }} *
               <input value="Draft" disabled>
             </label>
             <label>{{ lang.isGerman() ? 'Verantwortliches Team' : 'Responsible team' }} *
-              <input formControlName="information_folder_lookup_responsible_team" required>
+              <!-- TEMP: hardcoded to the "My Team" junction record while the Responsible team
+                   lookup dropdown is parked — see comment on responsibleTeamId below. -->
+              <select formControlName="information_folder_lookup_responsible_team" required>
+                <option [value]="responsibleTeamId">My Team</option>
+              </select>
             </label>
             <label>{{ lang.isGerman() ? 'Frist (Tage)' : 'Deadline (days)' }} *
               <input type="number" min="1" formControlName="information_folder_number_deadlinedays" required>
@@ -80,17 +102,17 @@ import { ActivateDialogComponent } from './activate-dialog.component';
             <p class="hint">{{ lang.isGerman()
               ? 'Speichern legt den Ordner im Status „Entwurf" an — es werden noch keine Benachrichtigungen versendet.'
               : 'Saving creates the folder in Draft — no notifications are sent yet.' }}</p>
-            <button class="primary" [disabled]="form.invalid">{{ lang.isGerman() ? 'Speichern und weiter' : 'Save and continue' }}</button>
+            <button class="primary" [disabled]="form.invalid || busy()">{{ lang.isGerman() ? 'Speichern und weiter' : 'Save and continue' }}</button>
           </footer>
         </form>
       }
       @case (2) { <im-audience-builder [folderId]="folderId()" (continue)="onAudienceContinue($event)" /> }
       @case (3) {
         <im-version-upload [folderId]="folderId()" [folderName]="form.value.information_folder_textfield_name ?? ''"
-                            (continue)="step.set(4)" />
+                            (continue)="onVersionSaved($event)" />
       }
       @case (4) {
-        <im-activate-dialog [folderId]="folderId()" [teamCount]="teamCount()" [userCount]="userCount()"
+        <im-activate-dialog [folderId]="folderId()" [versionId]="versionRecordId()" [teamCount]="teamCount()" [userCount]="userCount()"
                             [supersedes]="null" [deadlineDays]="form.value.information_folder_number_deadlinedays ?? 14" />
       }
     }
@@ -98,12 +120,61 @@ import { ActivateDialogComponent } from './activate-dialog.component';
 })
 export class FolderWizardComponent {
   private readonly fb = inject(FormBuilder);
+  private readonly http = inject(HttpClient);
+  private readonly session = inject(SessionService);
   readonly lang = inject(LanguageService);
+
+  readonly OBJECT_ID = OBJECT_ID;
 
   readonly step = signal(1);
   readonly folderId = signal('');
+  readonly versionRecordId = signal('');
   readonly teamCount = signal(0);
   readonly userCount = signal(0);
+  readonly busy = signal(false);
+  readonly createError = signal('');
+  readonly createPayload = signal<Record<string, unknown> | null>(null);
+
+  /**
+   * TEMP: information_folder_lookup_responsible_team's real target is the
+   * Information Manager Teams x Users junction object
+   * (2390c38b2ffe45feab68d882cc2a0105), scoped to the current user's own
+   * membership rows. The generic LOOKUP.TABLEDATA REST endpoint used by
+   * LookupService silently drops rows past a low page-size threshold
+   * (confirmed live: pageSize 100 -> 17 rows, pageSize 200 -> 0, out of 117
+   * total), so it can't reliably back a dropdown yet. Hardcoded to this
+   * user's real "My Team" junction record id, confirmed live via ecap-agent
+   * against the same object, pending a real fix to the paging issue.
+   */
+  readonly responsibleTeamId = '1828071854';
+
+  /**
+   * Fetched live from the same CaseRecordPage form-info endpoint ECAP's own
+   * native "New Information Folder" form uses (id=-1 = new-record mode,
+   * _component_=formInfo returns field defs without needing an existing
+   * record). The field's enumerated values live at
+   * field.sortedEnumerationDetails — confirmed against the live response.
+   */
+  readonly documentLanguages = toSignal(
+    this.http.get<any>('/networking/solution/ServiceDesk/CaseRecordPage', {
+      params: { object_id: OBJECT_ID.informationFolder, id: '-1', _component_: 'formInfo', alt: 'json' }
+    }).pipe(
+      map((response): string[] => {
+        const sections = response?.formInfo?.sections ?? [];
+        for (const section of sections) {
+          for (const fieldGroup of section.fields ?? []) {
+            for (const fieldList of Object.values(fieldGroup) as any[][]) {
+              const field = fieldList.find((f) => f.tableColumn === 'information_folder_multi_select_picklist_document_language');
+              if (field) return field.sortedEnumerationDetails ?? [];
+            }
+          }
+        }
+        return [];
+      }),
+      catchError((err) => { console.error('Document language field fetch failed', err); return of([] as string[]); })
+    ),
+    { initialValue: [] as string[] }
+  );
 
   readonly steps = [
     { n: 1, de: 'Metadaten', en: 'Metadata' },
@@ -117,23 +188,57 @@ export class FolderWizardComponent {
     information_folder_textfield_short_name: [''],
     information_folder_textfield_description: [''],
     information_folder_number_deadlinedays: [14, [Validators.required, Validators.min(1)]],
-    information_folder_lookup_responsible_team: ['', Validators.required],
+    information_folder_lookup_responsible_team: [this.responsibleTeamId, Validators.required],
     information_folder_picklist_confidentiality_level: ['Internal', Validators.required],
     information_folder_textfield_document_category: [''],
-    information_folder_multi_select_picklist_document_language: this.fb.nonNullable.control<string[]>(['de']),
+    information_folder_multi_select_picklist_document_language: this.fb.nonNullable.control<string[]>([]),
     information_folder_richtext_area_user_information: ['', Validators.required]
   });
 
   saveDraft(): void {
-    if (this.form.invalid) return;
-    // POST /record/{informationFolder} — server stamps User Id + Primary Team Id.
-    this.folderId.set('new-folder');
+    if (this.form.invalid || this.busy()) return;
+    this.busy.set(true);
+    this.createError.set('');
+    const v = this.form.getRawValue();
+    this.createPayload.set({
+      ...v,
+      // ECAP expects multi-value picklists as a comma-joined string, not a JSON array.
+      information_folder_multi_select_picklist_document_language: v.information_folder_multi_select_picklist_document_language.join(','),
+      // Native form auto-assigns this via a form rule (user.id) that only runs in ECAP's own UI — replicated here.
+      information_folder_text_field_userid: this.session.session().userId,
+      // Must be explicit, not omitted: same class of bug confirmed on Document Version — an
+      // unset picklist reads as blank, which still shows in an unfiltered "All Records" view
+      // but fails an exact-match filter for a specific status like a "Draft" tab.
+      information_folder_picklist_status: 'Draft',
+      layout_id: INFORMATION_FOLDER_LAYOUT_ID,
+      _request_id: crypto.randomUUID(),
+      _gridSectionsRecords_: {},
+      last_modified_timestamp: ''
+    });
+  }
+
+  onCreateResponse(response: any): void {
+    this.busy.set(false);
+    this.createPayload.set(null);
+    // Server stamps User Id + Primary Team Id on create; response echoes the new record's id.
+    this.folderId.set(String(response?.record?.id ?? response?.id ?? ''));
     this.step.set(2);
+  }
+
+  onCreateError(error: HttpErrorResponse): void {
+    this.busy.set(false);
+    this.createPayload.set(null);
+    this.createError.set(error.error?.__exception_msg__ ?? (this.lang.isGerman() ? 'Speichern fehlgeschlagen.' : 'Save failed.'));
   }
 
   onAudienceContinue(counts: { teamCount: number; userCount: number }): void {
     this.teamCount.set(counts.teamCount);
     this.userCount.set(counts.userCount);
     this.step.set(3);
+  }
+
+  onVersionSaved(versionId: string): void {
+    this.versionRecordId.set(versionId);
+    this.step.set(4);
   }
 }

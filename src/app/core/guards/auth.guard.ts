@@ -1,10 +1,6 @@
-import { inject } from '@angular/core';
-import { CanActivateFn, Router } from '@angular/router';
-import { SessionService } from '@core/services/session.service';
-
-/** Sends logged-out users to /login instead of any guarded route. */
-export const authGuard: CanActivateFn = () => {
-  const session = inject(SessionService);
-  const router = inject(Router);
-  return session.loggedOut() ? router.createUrlTree(['/login']) : true;
-};
+/**
+ * Delegates to the ECAP runtime's own guard: waits on LoggedInUserService.userSignal()
+ * (undefined = still resolving at boot, object = logged in, null = confirmed logged out)
+ * and redirects to /login in the logged-out case.
+ */
+export { authGuard } from '@escriba/cui-ecap-runtime';

@@ -1,10 +1,10 @@
 import { Component, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { toSignal, toObservable } from '@angular/core/rxjs-interop';
-import { switchMap } from 'rxjs';
-import { DataPort } from '@core/services/data.port';
-import { InformationFolder } from '@core/models';
+import { HttpClient } from '@angular/common/http';
+import { catchError, map, of, switchMap } from 'rxjs';
 import { LanguageService } from '@core/i18n/language.service';
+import { INFORMATION_FOLDER_VERSIONS_SECTION_ID, OBJECT_ID } from '@core/objects';
 import { VersionUploadComponent } from './version-upload.component';
 import { ActivateDialogComponent } from './activate-dialog.component';
 
@@ -28,20 +28,89 @@ import { ActivateDialogComponent } from './activate-dialog.component';
         : 'On activation the current version is deactivated, its acknowledgements are set to Obsolete, and the whole audience receives new tasks with a fresh deadline — including people who already confirmed.' }}
     </p>
 
-    <im-version-upload [folderId]="id()" [folderName]="folderName()" (continue)="ready.set(true)" />
-
-    @if (ready()) {
-      <im-activate-dialog [folderId]="id()" [teamCount]="3" [userCount]="128" [deadlineDays]="14" supersedes="v2.1" />
+    @if (!versionRecordId()) {
+      <im-version-upload [folderId]="id()" [folderName]="folderName()" (continue)="onVersionSaved($event)" />
+    } @else {
+      <im-activate-dialog [folderId]="id()" [versionId]="versionRecordId()"
+                           [teamCount]="orgUnitCount()" [userCount]="userCount()"
+                           [deadlineDays]="14" [supersedes]="activeVersionLabel()" />
     }
   `
 })
 export class VersionFormComponent {
-  private readonly data = inject(DataPort);
+  private readonly http = inject(HttpClient);
   readonly lang = inject(LanguageService);
   readonly id = input.required<string>();
-  readonly ready = signal(false);
+  readonly versionRecordId = signal('');
 
-  private readonly folder = toSignal<InformationFolder | null>(
-    toObservable(this.id).pipe(switchMap((id) => this.data.folder(id))), { initialValue: null });
-  readonly folderName = () => this.folder()?.information_folder_textfield_name ?? '';
+  readonly folderName = toSignal(
+    toObservable(this.id).pipe(switchMap((folderId) => this.fetchFolderName(folderId))),
+    { initialValue: '' }
+  );
+
+  readonly orgUnitCount = toSignal(
+    toObservable(this.id).pipe(switchMap((folderId) => this.fetchCount(OBJECT_ID.organizationalUnits, folderId))),
+    { initialValue: 0 }
+  );
+
+  readonly userCount = toSignal(
+    toObservable(this.id).pipe(switchMap((folderId) => this.fetchCount(OBJECT_ID.employees, folderId))),
+    { initialValue: 0 }
+  );
+
+  /** Best-effort — the current Active version's own version id, shown in the "will be deactivated" warning. */
+  readonly activeVersionLabel = toSignal(
+    toObservable(this.id).pipe(switchMap((folderId) => this.fetchActiveVersionLabel(folderId))),
+    { initialValue: null as string | null }
+  );
+
+  onVersionSaved(versionId: string): void {
+    this.versionRecordId.set(versionId);
+  }
+
+  private fetchFolderName(folderId: string) {
+    if (!folderId) return of('');
+    return this.http.get<any>(`/networking/rest/record/${OBJECT_ID.informationFolder}/${folderId}`, {
+      params: { fieldList: 'information_folder_textfield_name', alt: 'json' }
+    }).pipe(
+      map((response) => response?.platform?.record?.information_folder_textfield_name ?? ''),
+      catchError((err) => { console.error('Folder name fetch failed', err); return of(''); })
+    );
+  }
+
+  private fetchCount(objectId: string, folderId: string) {
+    if (!folderId) return of(0);
+    return this.http.get<any>(`/networking/rest/record/${objectId}`, {
+      params: {
+        filter: `(informationfolder_record equals '${folderId}')`,
+        fieldList: 'id', pageSize: 1, getTotalRecordCount: true, alt: 'json'
+      }
+    }).pipe(
+      map((response) => Number(response?.platform?.totalRecordCount ?? 0)),
+      catchError((err) => { console.error(`Count fetch failed for ${objectId}`, err); return of(0); })
+    );
+  }
+
+  /**
+   * Goes through the real relatedObjectList endpoint (confirmed live), not the generic
+   * rest/record/{oid}?filter=... list endpoint, which proved unreliable for this exact
+   * object/folder combination independent of retries or page size.
+   */
+  private fetchActiveVersionLabel(folderId: string) {
+    if (!folderId) return of(null as string | null);
+    return this.http.get<any>('/networking/solution/ServiceDesk/relatedObjectList', {
+      params: {
+        record_id: folderId, p_objectId: OBJECT_ID.informationFolder,
+        related_section_id: INFORMATION_FOLDER_VERSIONS_SECTION_ID,
+        paginationRequired: true, page: 1, pageSize: 200, _uiVersion: 3, sortBy: 'date_modified', sortOrder: 'desc'
+      }
+    }).pipe(
+      map((response) => {
+        const rows = response?.[INFORMATION_FOLDER_VERSIONS_SECTION_ID]?.relatedInfoData ?? [];
+        const active = rows.find((r: any) => r.version_picklist_version_status === 'Active');
+        return active ? (active.record_locator ?? '').split(' - ').pop() || active.id : null;
+      }),
+      catchError((err) => { console.error('Active version lookup failed', err); return of(null as string | null); })
+    );
+  }
 }

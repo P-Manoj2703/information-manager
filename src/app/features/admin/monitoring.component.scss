@@ -1,0 +1,39 @@
+.bar { display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;
+  h1 { margin:0; font-size:22px; font-weight:300; }
+  .spacer { margin-left:auto; }
+  .count { font-size:13px; font-weight:600; color:var(--fg-2); }
+}
+.scroll { overflow-x:auto; background:#fff; border:1px solid var(--border-1); border-radius:var(--radius-card); }
+table { width:100%; min-width:900px; border-collapse:collapse; }
+th { text-align:left; font-size:11px; font-weight:700; letter-spacing:.08em; color:var(--fg-3);
+     background:var(--bg-2); padding:12px 20px; white-space:nowrap; }
+td { padding:14px 20px; border-top:1px solid var(--border-1); font-size:13px; vertical-align:middle; }
+.empty { text-align:center; color:var(--fg-3); padding:24px; }
+.note { margin:12px 0 0; font-size:13px; color:var(--fg-2); }
+.note--error { color:var(--danger); }
+.ghost { border:1px solid var(--border-2); background:#fff; color:var(--fg-2); cursor:pointer;
+         font:inherit; font-size:13px; font-weight:600; padding:7px 14px; border-radius:var(--radius-pill);
+         white-space:nowrap;
+         &:disabled { opacity:.5; cursor:not-allowed; } }
+
+.backdrop { position:fixed; inset:0; background:rgba(6,19,30,.55); display:grid; place-items:center;
+            padding:32px; z-index:50; }
+.dialog { background:#fff; border-radius:var(--radius-card); width:100%; max-width:480px;
+          padding:26px 30px 22px; display:flex; flex-direction:column; gap:16px; box-shadow:var(--shadow-lg);
+  h2 { margin:0; font-size:20px; font-weight:300; }
+  label { display:flex; flex-direction:column; gap:6px; font-size:13px; }
+  .eyebrow { font-size:11px; font-weight:700; letter-spacing:.06em; color:var(--fg-3); }
+  select, input[type="date"], input[type="text"], textarea {
+    font:inherit; font-size:13px; padding:9px 12px; border:1px solid var(--border-1);
+    border-radius:var(--radius-input); resize:vertical; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; padding:8px 12px; border:1px solid var(--border-1);
+    border-radius:var(--radius-input); background:var(--bg-2); min-height:20px; }
+  .chip { background:#fff; border:1px solid var(--border-1); border-radius:var(--radius-pill);
+    padding:3px 10px; font-size:12px; }
+  .note { margin:0; font-size:12px; color:var(--fg-3); }
+  .note--error { color:var(--danger); }
+}
+footer { display:flex; justify-content:flex-end; gap:10px; }
+.primary { border:0; cursor:pointer; font:inherit; font-weight:600; background:var(--escriba-teal);
+           color:var(--navy-900); padding:11px 20px; border-radius:var(--radius-pill);
+           &:disabled { opacity:.5; cursor:not-allowed; } }

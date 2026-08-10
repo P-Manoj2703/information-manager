@@ -27,6 +27,7 @@
     padding: 10px 12px; color: #fff; font: inherit; font-size: 13px; resize: vertical;
   }
   .note { margin: 0; font-size: 12px; color: var(--on-dark-3); line-height: 1.6; }
+  .note--error { color: #ff6b6b; }
 }
 
 .confirm {

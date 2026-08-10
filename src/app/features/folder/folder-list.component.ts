@@ -1,9 +1,10 @@
-import { Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { toSignal, toObservable } from '@angular/core/rxjs-interop';
-import { switchMap } from 'rxjs';
+import { Component, computed, effect, inject, signal } from '@angular/core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { RecordListDirective, RecordsPayloadMeta, RecordsResponseMeta } from '@escriba/cui-ecap-runtime';
 import { AckStatus, Confidentiality, FolderStatus, InformationFolder } from '@core/models';
-import { DataPort } from '@core/services/data.port';
+import { API_BASE, INFORMATION_FOLDER_ACTIVATE_MACRO_ID, INFORMATION_FOLDER_DEACTIVATE_MACRO_ID, INFORMATION_FOLDER_VIEW_ID, OBJECT_ID } from '@core/objects';
 import { SessionService } from '@core/services/session.service';
 import { LanguageService } from '@core/i18n/language.service';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
@@ -15,7 +16,7 @@ import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-fil
 @Component({
   selector: 'im-folder-list',
   standalone: true,
-  imports: [RouterLink, StatusBadgeComponent, FilterChipsComponent, EmptyStateComponent, ColumnFilterComponent],
+  imports: [RouterLink, RecordListDirective, StatusBadgeComponent, FilterChipsComponent, EmptyStateComponent, ColumnFilterComponent],
   styles: [`
     .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
     .bar .spacer { margin-left: auto; }
@@ -34,8 +35,17 @@ import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-fil
     .activate { border:0; background:var(--escriba-teal); color:var(--navy-900); cursor:pointer;
                 font:inherit; font-size:12px; font-weight:600; padding:7px 14px; border-radius:var(--radius-pill);
                 &:disabled { opacity:.5; cursor:not-allowed; } }
+    .action-error { color:var(--danger); font-size:11px; margin-top:8px; text-align:right; line-height:1.4; }
   `],
   template: `
+    @for (payload of payloads(); track $index) {
+      <ng-container
+        [libEcapRuntimeRecordList]="payload"
+        (apiResponseEvent)="onFoldersResponse($index, $event)"
+        (apiErrorEvent)="onFoldersError($index, $event)">
+      </ng-container>
+    }
+
     <div class="bar">
       <im-filter-chips [chips]="chips()" [(value)]="view" />
       <span class="spacer"></span>
@@ -93,6 +103,9 @@ import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-fil
                     {{ lang.isGerman() ? 'Aktivieren' : 'Activate' }}
                   </button>
                 }
+                @if (actionError()?.folderId === f.id) {
+                  <div class="action-error">{{ actionError()!.message }}</div>
+                }
               }
             </td>
           </tr>
@@ -107,17 +120,40 @@ import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-fil
   `
 })
 export class FolderListComponent {
-  private readonly data = inject(DataPort);
+  private readonly http = inject(HttpClient);
+  private readonly route = inject(ActivatedRoute);
   readonly session = inject(SessionService);
   readonly lang = inject(LanguageService);
   readonly view = signal('myActive');
   readonly busy = signal<string | null>(null);
+  readonly actionError = signal<{ folderId: string; message: string } | null>(null);
 
   /** Empty array = no filter applied for that column. */
   readonly confidentialityFilter = signal<string[]>([]);
   readonly statusFilter = signal<string[]>([]);
   readonly rollupFilter = signal<string[]>([]);
   readonly deadlineFilter = signal<string[]>([]);
+
+  /**
+   * Arriving from Estate Overview's status buckets: ?view=all&rollup=Pending pre-selects the
+   * "All" tab and the roll-up column filter, so Compliance lands directly on the matching
+   * folders instead of having to set both by hand.
+   */
+  constructor() {
+    const queryParams = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
+    effect(() => {
+      const params = queryParams();
+      const view = params.get('view');
+      const rollup = params.get('rollup');
+      if (view) this.view.set(view);
+      if (rollup) this.rollupFilter.set([rollup]);
+    }, { allowSignalWrites: true });
+
+    effect(() => {
+      const count = this.payloads().length;
+      this.folderPartials.set(Array.from({ length: count }, () => []));
+    });
+  }
 
   readonly confidentialityOptions: ColumnFilterOption[] =
     (['Internal', 'Public', 'Confidential'] as Confidentiality[]).map((c) => ({ value: c, label: c }));
@@ -138,10 +174,85 @@ export class FolderListComponent {
     (['None', 'Pending', 'Overdue', 'Done', 'Obsolete'] as AckStatus[])
       .map((r) => ({ value: r, label: this.ROLLUP_LABEL[r][this.lang.isGerman() ? 0 : 1] })));
 
-  private readonly refresh = signal(0);
-  private readonly all = toSignal(
-    toObservable(this.refresh).pipe(switchMap(() => this.data.folders())),
-    { initialValue: [] as InformationFolder[] });
+  private readonly refreshTick = signal(0);
+
+  /** Which ECAP view(s) back the current tab — Team — active merges 3 views into one list. */
+  private readonly viewIds = computed<string[]>(() => {
+    switch (this.view()) {
+      case 'myActive': return [INFORMATION_FOLDER_VIEW_ID.myActive];
+      case 'myDraft': return [INFORMATION_FOLDER_VIEW_ID.myDraft];
+      case 'teamActive': return [
+        INFORMATION_FOLDER_VIEW_ID.teamsActive,
+        INFORMATION_FOLDER_VIEW_ID.teamsDraft,
+        INFORMATION_FOLDER_VIEW_ID.teamsInactive
+      ];
+      case 'inactive': return [INFORMATION_FOLDER_VIEW_ID.myInactive];
+      // 'all' and any other value fall through to the same real "All Records" view.
+      default: return [INFORMATION_FOLDER_VIEW_ID.allRecords];
+    }
+  });
+
+  /** New object references each time (view change or refreshTick bump) so the directive's ngOnChanges refetches. */
+  readonly payloads = computed<RecordsPayloadMeta[]>(() => {
+    this.refreshTick();
+    return this.viewIds().map((id) => ({
+      id, object_id: OBJECT_ID.informationFolder,
+      page: 0, pageSize: 100, sortBy: 'date_modified', sortOrder: 'desc',
+      getTotalRecordCount: false
+    }));
+  });
+
+  /** One slot per payload; merged into `all` below. Reset whenever the set of payloads changes. */
+  private readonly folderPartials = signal<InformationFolder[][]>([]);
+  private readonly all = computed(() => this.folderPartials().flat());
+
+  onFoldersResponse(index: number, response: RecordsResponseMeta): void {
+    const mapped = (response.listData?.recordsList ?? []).map((raw) => this.mapFolder(raw));
+    this.folderPartials.update((partials) => {
+      const next = [...partials];
+      next[index] = mapped;
+      return next;
+    });
+  }
+
+  onFoldersError(index: number, error: HttpErrorResponse): void {
+    console.error('Failed to load Information Folder records', error);
+    this.folderPartials.update((partials) => {
+      const next = [...partials];
+      next[index] = [];
+      return next;
+    });
+  }
+
+  /**
+   * Raw record field names should match InformationFolder verbatim once the ECAP views are
+   * configured to return them (name/short-name/confidentiality/status/roll-up/deadline/team/
+   * created_id) — see the note left for the user about reconfiguring selectedColumnsList.
+   */
+  private mapFolder(raw: any): InformationFolder {
+    return {
+      id: raw.id,
+      information_folder_textfield_name: raw.information_folder_textfield_name ?? raw.record_locator ?? '',
+      information_folder_textfield_short_name: raw.information_folder_textfield_short_name,
+      information_folder_richtext_area_user_information: raw.information_folder_richtext_area_user_information ?? '',
+      information_folder_textfield_document_category: raw.information_folder_textfield_document_category,
+      information_folder_multi_select_picklist_document_language: raw.information_folder_multi_select_picklist_document_language,
+      information_folder_picklist_confidentiality_level: raw.information_folder_picklist_confidentiality_level,
+      information_folder_picklist_status: raw.information_folder_picklist_status,
+      information_folder_picklist_acknowledgment_status: raw.information_folder_picklist_acknowledgment_status,
+      information_folder_picklist_processing_status: raw.information_folder_picklist_processing_status,
+      information_folder_number_deadlinedays: raw.information_folder_number_deadlinedays,
+      // Also a Lookup field — same {id, name} shape as created_id/modified_id.
+      information_folder_lookup_responsible_team: raw.information_folder_lookup_responsible_team?.id ?? raw.information_folder_lookup_responsible_team,
+      information_folder_lu_distribution_list: raw.information_folder_lu_distribution_list,
+      information_folder_text_field_userid: raw.information_folder_text_field_userid,
+      information_folder_text_field_primary_team_id: raw.information_folder_text_field_primary_team_id,
+      // "Created By" is a Lookup field on the real layout — comes back as {id, name}, not a plain string.
+      created_id: raw.created_id?.id ?? raw.created_id,
+      date_created: raw.date_created,
+      date_modified: raw.date_modified
+    };
+  }
 
   readonly deadlineOptions = computed<ColumnFilterOption[]>(() =>
     [...new Set(this.all().map((f) => f.information_folder_number_deadlinedays))]
@@ -156,21 +267,18 @@ export class FolderListComponent {
     { id: 'all', label: this.lang.isGerman() ? 'Alle' : 'All' }
   ]);
 
-  /** Row security: creator OR matching hidden Primary Team Id. */
+  /**
+   * Row security is already enforced server-side by Information_Folder's own access-control
+   * rule (its "view"/"record_view" additional_criteria grants exactly: your own records, or
+   * your team's, unless you hold an elevated role) — every view including "All" (id '0',
+   * ECAP's generic no-view sentinel) is already scoped by that ACL before it reaches here.
+   * A client-side re-filter for 'all' used to duplicate this ("mine(f) || team(f) || ...")
+   * but broke silently: view '0' doesn't return created_id or the hidden Primary Team Id
+   * field at all, so every row read as undefined !== userId and got dropped despite ECAP
+   * having already returned exactly the rows this user is allowed to see.
+   */
   readonly visible = computed(() => {
-    const me = this.session.session();
-    const mine = (f: InformationFolder) => f.created_id === me.userId;
-    const team = (f: InformationFolder) => f.information_folder_text_field_primary_team_id === me.primaryTeamId;
-    const byView = this.all().filter((f) => {
-      const status = f.information_folder_picklist_status;
-      switch (this.view()) {
-        case 'myActive': return mine(f) && status === 'Active';
-        case 'myDraft': return mine(f) && status === 'Draft';
-        case 'teamActive': return (mine(f) || team(f)) && status === 'Active';
-        case 'inactive': return status === 'Inactive';
-        default: return mine(f) || team(f) || this.session.role() !== 'informationsbereitsteller';
-      }
-    });
+    const byView = this.all();
 
     const conf = this.confidentialityFilter();
     const status = this.statusFilter();
@@ -185,17 +293,39 @@ export class FolderListComponent {
 
   deactivate(folderId: string): void {
     this.busy.set(folderId);
-    this.data.deactivateFolder(folderId).subscribe(() => {
-      this.busy.set(null);
-      this.refresh.update((n) => n + 1);
+    this.actionError.set(null);
+    this.http.post<any>(
+      `${API_BASE}/record/${OBJECT_ID.informationFolder}/${folderId}/execMacro/${INFORMATION_FOLDER_DEACTIVATE_MACRO_ID}`, {}
+    ).subscribe({
+      next: () => { this.busy.set(null); this.refreshTick.update((n) => n + 1); },
+      error: (err: HttpErrorResponse) => {
+        console.error('Deactivate folder failed', err);
+        this.busy.set(null);
+        this.actionError.set({
+          folderId,
+          message: err?.error?.platform?.message?.description ?? (this.lang.isGerman() ? 'Deaktivierung fehlgeschlagen.' : 'Deactivation failed.')
+        });
+      }
     });
   }
 
   activate(folderId: string): void {
     this.busy.set(folderId);
-    this.data.activateFolder(folderId).subscribe(() => {
-      this.busy.set(null);
-      this.refresh.update((n) => n + 1);
+    this.actionError.set(null);
+    this.http.post<any>(
+      `${API_BASE}/record/${OBJECT_ID.informationFolder}/${folderId}/execMacro/${INFORMATION_FOLDER_ACTIVATE_MACRO_ID}`, {}
+    ).subscribe({
+      next: () => { this.busy.set(null); this.refreshTick.update((n) => n + 1); },
+      error: (err: HttpErrorResponse) => {
+        console.error('Activate folder failed', err);
+        this.busy.set(null);
+        this.actionError.set({
+          folderId,
+          // execMacro errors nest the real message under platform.message.description — a
+          // different shape than the __exception_msg__ format used by other real endpoints.
+          message: err?.error?.platform?.message?.description ?? (this.lang.isGerman() ? 'Aktivierung fehlgeschlagen.' : 'Activation failed.')
+        });
+      }
     });
   }
 }

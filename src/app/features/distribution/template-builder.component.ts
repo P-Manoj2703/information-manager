@@ -1,290 +1,517 @@
-import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, effect, inject, input, signal, computed } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { DataPort } from '@core/services/data.port';
-import { AudienceService } from '@core/services/audience.service';
+import { toSignal, toObservable } from '@angular/core/rxjs-interop';
+import { HttpClient } from '@angular/common/http';
+import { RecordCreateDirective } from '@escriba/cui-ecap-runtime';
+import { Observable, catchError, map, of, switchMap } from 'rxjs';
 import { LanguageService } from '@core/i18n/language.service';
-import { SERVER_MESSAGE } from '@core/server-messages';
-import { AppUser, DistributionTemplate, Team } from '@core/models';
-import { ProvenancePillComponent } from '@shared/ui/provenance-pill.component';
+import { OBJECT_ID } from '@core/objects';
 
-interface LinkedTeam { teamId: string; includeTeamHierarchy: boolean; }
+/** Information Manager Teams (2a4456…) — NOT the raw system Team object. */
+interface OrgTeam { id: string; name: string; parentId: string; }
+/** Information Manager Users (dad2…) — NOT the raw system User. */
+interface OrgUser { id: string; label: string; }
+
+interface LinkedTeam {
+  recordId: string; teamId: string; teamName: string; includeTeamHierarchy: boolean;
+  lastModifiedTimestamp: string;
+}
+interface LinkedUser { recordId: string; userId: string; userLabel: string; }
+
+/** Distribution_List_Teams / Distribution_List_Users checkboxes round-trip as "1"/"0" — same convention confirmed on Organizational_Units. */
+function isCheckboxActive(val: unknown): boolean {
+  if (val == null) return false;
+  const s = String(val);
+  return s === '1' || s.toLowerCase() === 'true' || s.toLowerCase() === 'yes';
+}
+
+const DISTRIBUTION_LIST_TEAMS_OBJECT = '4c8a796eb68640e790ceda13abb8e9e1';
+const DISTRIBUTION_LIST_TEAMS_LAYOUT_ID = 'a1d457b30aa546319d7dd85ab73bbf58';
+const DISTRIBUTION_LIST_USERS_OBJECT = 'e180bc457fc9435ab8f993f475ad0a9c';
+const DISTRIBUTION_LIST_USERS_LAYOUT_ID = 'd76f20eed59d49ba8a7039506dd799d6';
+const DISTRIBUTION_LIST_LAYOUT_ID = 'cb599bfbc9dd4071b81f31afd10663ca';
 
 /**
- * UC-ADM-03. Create or edit a distribution template — a standalone bundle of teams
- * and people that folders can apply later (see AudienceBuilderComponent's template
- * picker). Unlike a folder's own audience, nothing here ever locks: a template
- * isn't a published/frozen record, so "incl. sub-teams" stays freely togglable.
+ * UC-ADM-03. Create or edit a distribution template — a standalone bundle of teams and
+ * people that folders can apply later (see AudienceBuilderComponent's template picker).
+ *
+ * Real object model, confirmed live against ECAP (2026-08-09):
+ *  - Distribution_Lists (45aed8d7…) — the template itself: name + description.
+ *  - Distribution_List_Teams (4c8a796e…) — one row per linked org unit: distributionlist_record,
+ *    teams_record (→ Information Manager Teams), distribution_list_teams_cb_include_team_hierarchy.
+ *  - Distribution_List_Users (e180bc45…) — one row per linked person: distributionlist_record,
+ *    users_record (→ Information Manager Users).
+ *
+ * The template record has to exist before either junction object can reference it, so unlike
+ * the original mock (single "Save" at the end), this saves the name/description first — same
+ * two-phase shape already proven for Information Folder and Document Version — and each
+ * team/user add below that is an immediate, real create, mirroring AudienceBuilderComponent.
+ * Dropped from the mock: the "resolved members with provenance" preview (who's included
+ * directly vs. via a team vs. via hierarchy) — ECAP's own Distribution Template screen has no
+ * such preview, it just lists the linked teams/users directly.
  */
 @Component({
   selector: 'im-template-builder',
   standalone: true,
-  imports: [RouterLink, ProvenancePillComponent],
+  imports: [RouterLink, RecordCreateDirective],
   styleUrl: './template-builder.component.scss',
   template: `
     <a class="back" routerLink="/templates">← {{ lang.t('templates') }}</a>
+
+    @if (createPayload()) {
+      <ng-container
+        [libEcapRuntimeRecordCreate]="createPayload()"
+        [objectId]="OBJECT_ID.distributionTemplate"
+        (apiResponseEvent)="onCreateResponse($event)"
+        (apiErrorEvent)="onCreateError($event)">
+      </ng-container>
+    }
 
     <section class="card">
       <header class="head">
         <label class="name-field">
           {{ lang.isGerman() ? 'Name der Vorlage' : 'Template name' }} *
-          <input [value]="name()" (input)="name.set($any($event.target).value)"
+          <input [value]="name()" [disabled]="!!templateId()" (input)="name.set($any($event.target).value)"
                  [placeholder]="lang.isGerman() ? 'z. B. Alle Standorte DACH' : 'e.g. All DACH locations'">
         </label>
-        <div class="stats" aria-live="polite">
-          <div class="stat">
-            <span class="eyebrow">{{ lang.isGerman() ? 'Organisationseinheiten' : 'Organisational units' }}</span>
-            <strong>{{ linked().length }}</strong>
+        @if (templateId()) {
+          <div class="stats" aria-live="polite">
+            <div class="stat">
+              <span class="eyebrow">{{ lang.isGerman() ? 'Organisationseinheiten' : 'Organisational units' }}</span>
+              <strong>{{ linkedTeams().length }}</strong>
+            </div>
+            <div class="stat">
+              <span class="eyebrow">{{ lang.t('users') }}</span>
+              <strong>{{ linkedUsers().length }}</strong>
+            </div>
           </div>
-          <div class="stat">
-            <span class="eyebrow">{{ lang.t('users') }}</span>
-            <strong>{{ members().length }}</strong>
-          </div>
-        </div>
+        }
       </header>
 
-      @if (duplicateError()) { <p class="error">{{ duplicateError() }}</p> }
+      @if (createError()) { <p class="error">{{ createError() }}</p> }
 
-      <div class="panels">
-        <div class="panel">
-          <header>
-            <span class="panel__title">{{ lang.isGerman() ? 'Organisationseinheiten' : 'Organisational units' }}
-              <span class="panel__count">{{ linked().length }}</span></span>
-            <button type="button" class="plus-btn" (click)="showTeamPicker.set(!showTeamPicker())">
-              <span class="plus">+</span> {{ lang.isGerman() ? 'Hinzufügen' : 'Add' }}
-            </button>
-          </header>
+      @if (!templateId()) {
+        <label class="name-field">
+          {{ lang.isGerman() ? 'Beschreibung' : 'Description' }}
+          <input [value]="description()" (input)="description.set($any($event.target).value)">
+        </label>
+        <footer>
+          <a class="ghost" routerLink="/templates">{{ lang.isGerman() ? 'Abbrechen' : 'Cancel' }}</a>
+          <button type="button" class="primary" [disabled]="!name().trim() || creating()" (click)="save()">
+            {{ creating() ? (lang.isGerman() ? 'Wird gespeichert…' : 'Saving…') : (lang.isGerman() ? 'Speichern' : 'Save') }}
+          </button>
+        </footer>
+      } @else {
+        @if (teamError()) { <p class="error">{{ teamError() }}</p> }
+        @if (userError()) { <p class="error">{{ userError() }}</p> }
 
-          @for (l of linked(); track l.teamId) {
-            <div class="row">
-              <div class="row__main">
-                <div class="row__name">
-                  <strong>{{ teamName(l.teamId) }}</strong>
-                  <small>
-                    {{ rowCounts(l).direct }} {{ lang.isGerman() ? 'direkt' : 'direct' }}
-                    @if (l.includeTeamHierarchy && rowCounts(l).fromSubTeams) {
-                      · {{ rowCounts(l).fromSubTeams }} {{ lang.isGerman() ? 'aus Unterteams' : 'from sub-teams' }}
+        <div class="panels">
+          <div class="panel">
+            <header>
+              <span class="panel__title">{{ lang.isGerman() ? 'Organisationseinheiten' : 'Organisational units' }}
+                <span class="panel__count">{{ linkedTeams().length }}</span></span>
+              <button type="button" class="plus-btn" (click)="showTeamPicker.set(!showTeamPicker())">
+                <span class="plus">+</span> {{ lang.isGerman() ? 'Hinzufügen' : 'Add' }}
+              </button>
+            </header>
+
+            @for (t of linkedTeams(); track t.recordId) {
+              <div class="row">
+                <div class="row__main">
+                  <div class="row__name">
+                    <strong>{{ t.teamName }}</strong>
+                    @if (t.includeTeamHierarchy) {
+                      <small>{{ lang.isGerman() ? 'inkl. Unterteams' : 'includes sub-teams' }}</small>
                     }
-                  </small>
+                  </div>
+                  <label class="switch" [class.switch--locked]="t.includeTeamHierarchy">
+                    <input type="checkbox" class="switch__input" [checked]="t.includeTeamHierarchy"
+                           [disabled]="t.includeTeamHierarchy" (change)="enableHierarchy(t)">
+                    <span class="switch__track" [class.switch__track--on]="t.includeTeamHierarchy">
+                      <span class="switch__thumb"></span>
+                    </span>
+                    <span class="switch__label">{{ lang.isGerman() ? 'Hierarchie' : 'Hierarchy' }}</span>
+                  </label>
+                  <button type="button" class="x" (click)="removeTeam(t.recordId)" aria-label="remove">×</button>
                 </div>
+              </div>
+            }
+
+            @if (showTeamPicker()) {
+              <div class="picker">
+                <input type="text" class="lookup__input" [value]="teamQuery()"
+                       (input)="teamQuery.set($any($event.target).value)"
+                       [placeholder]="lang.isGerman() ? 'Team suchen…' : 'Search teams…'">
                 <label class="switch">
-                  <input type="checkbox" class="switch__input" [checked]="l.includeTeamHierarchy" (change)="toggleHierarchy(l.teamId)">
+                  <input type="checkbox" class="switch__input" [checked]="newTeamIncludeHierarchy()"
+                         (change)="newTeamIncludeHierarchy.set(!newTeamIncludeHierarchy())">
                   <span class="switch__track"><span class="switch__thumb"></span></span>
-                  <span class="switch__label">{{ lang.isGerman() ? 'inkl. Unterteams' : 'incl. sub-teams' }}</span>
+                  <span class="switch__label">{{ lang.isGerman() ? 'Team-Hierarchie einschließen' : 'Include team hierarchy' }}</span>
                 </label>
-                <button type="button" class="x" (click)="unlink(l.teamId)" aria-label="remove">×</button>
-              </div>
-
-              @if (l.includeTeamHierarchy && childTeams(l.teamId).length) {
-                <ul class="tree">
-                  @for (c of childTeams(l.teamId); track c.id) {
-                    <li>
-                      <span>{{ c.information_manager_teams_textfield_name }}</span>
-                      <span class="tree__count">{{ lang.isGerman() ? 'automatisch verknüpft' : 'auto-linked' }} · {{ c.memberCount }}</span>
-                    </li>
-                  }
-                </ul>
-              }
-            </div>
-          }
-
-          @if (showTeamPicker()) {
-            <div class="picker">
-              <input type="text" class="lookup__input" [value]="teamQuery()"
-                     (input)="teamQuery.set($any($event.target).value)"
-                     [placeholder]="lang.isGerman() ? 'Team suchen…' : 'Search teams…'">
-              <div class="add">
-                @for (t of addableTeams(); track t.id) {
-                  <button type="button" (click)="link(t.id)">+ {{ t.information_manager_teams_textfield_name }}</button>
-                } @empty {
-                  @if (teamQuery().trim()) {
-                    <span class="lookup__empty">{{ lang.isGerman() ? 'Keine Teams gefunden' : 'No teams found' }}</span>
-                  }
+                @if (teamsLoading()) {
+                  <span class="lookup__empty">{{ lang.isGerman() ? 'Teams werden geladen…' : 'Loading teams…' }}</span>
                 }
-              </div>
-            </div>
-          }
-        </div>
-
-        <div class="panel">
-          <header>
-            <span class="panel__title">{{ lang.t('users') }}
-              <span class="panel__count">{{ members().length }}</span></span>
-            <button type="button" class="plus-btn" (click)="showUserPicker.set(!showUserPicker())">
-              <span class="plus">+</span> {{ lang.isGerman() ? 'Hinzufügen' : 'Add' }}
-            </button>
-          </header>
-
-          @if (showUserPicker()) {
-            <div class="picker">
-              <input type="text" class="lookup__input" [value]="userQuery()"
-                     (input)="userQuery.set($any($event.target).value)"
-                     [placeholder]="lang.isGerman() ? 'Person suchen…' : 'Search people…'">
-              @if (userQuery().trim()) {
-                <div class="lookup__results">
-                  @for (u of addableUsers(); track u.id) {
-                    <button type="button" (click)="addUser(u.id)">
-                      + {{ u.firstName }} {{ u.lastName }} <small>{{ teamName(u.primaryTeamId) }}</small>
-                    </button>
+                <div class="add">
+                  @for (t of addableTeams(); track t.id) {
+                    <button type="button" (click)="addTeam(t.id, t.name)">+ {{ t.name }}</button>
                   } @empty {
-                    <span class="lookup__empty">{{ lang.isGerman() ? 'Keine Treffer' : 'No matches' }}</span>
+                    @if (!teamsLoading() && teamQuery().trim()) {
+                      <span class="lookup__empty">{{ lang.isGerman() ? 'Keine Teams gefunden' : 'No teams found' }}</span>
+                    }
                   }
                 </div>
-              }
-            </div>
-          }
-
-          <div class="roster">
-            @for (m of members(); track m.user.id) {
-              <div class="person">
-                <div class="person__id">
-                  <span class="person__name">{{ m.user.firstName }} {{ m.user.lastName }}</span>
-                  <span class="person__team">{{ teamName(m.user.primaryTeamId) }}</span>
-                </div>
-                <im-provenance-pill [kind]="m.provenance" />
-                @if (m.provenance === 'direct') {
-                  <button type="button" class="x" (click)="removeUser(m.user.id)" aria-label="remove">×</button>
-                }
               </div>
             }
           </div>
-        </div>
-      </div>
 
-      <footer>
-        <a class="ghost" routerLink="/templates">{{ lang.isGerman() ? 'Abbrechen' : 'Cancel' }}</a>
-        <button type="button" class="primary" [disabled]="!name().trim() || saving()" (click)="save()">
-          {{ lang.isGerman() ? 'Speichern' : 'Save' }}
-        </button>
-      </footer>
+          <div class="panel">
+            <header>
+              <span class="panel__title">{{ lang.t('users') }}
+                <span class="panel__count">{{ linkedUsers().length }}</span></span>
+              <button type="button" class="plus-btn" (click)="showUserPicker.set(!showUserPicker())">
+                <span class="plus">+</span> {{ lang.isGerman() ? 'Hinzufügen' : 'Add' }}
+              </button>
+            </header>
+
+            @if (showUserPicker()) {
+              <div class="picker">
+                <input type="text" class="lookup__input" [value]="userQuery()"
+                       (input)="userQuery.set($any($event.target).value)"
+                       [placeholder]="lang.isGerman() ? 'Person suchen…' : 'Search people…'">
+                @if (usersLoading()) {
+                  <span class="lookup__empty">{{ lang.isGerman() ? 'Personen werden geladen…' : 'Loading people…' }}</span>
+                }
+                <div class="lookup__results">
+                  @for (u of addableUsers(); track u.id) {
+                    <button type="button" (click)="addUser(u.id, u.label)">+ {{ u.label }}</button>
+                  } @empty {
+                    @if (!usersLoading() && userQuery().trim()) {
+                      <span class="lookup__empty">{{ lang.isGerman() ? 'Keine Treffer' : 'No matches' }}</span>
+                    }
+                  }
+                </div>
+              </div>
+            }
+
+            <div class="roster">
+              @for (u of linkedUsers(); track u.recordId) {
+                <div class="person">
+                  <div class="person__id">
+                    <span class="person__name">{{ u.userLabel }}</span>
+                  </div>
+                  <button type="button" class="x" (click)="removeUser(u.recordId)" aria-label="remove">×</button>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+
+        <footer>
+          <a class="primary" routerLink="/templates">{{ lang.isGerman() ? 'Fertig' : 'Done' }}</a>
+        </footer>
+      }
     </section>
   `
 })
 export class TemplateBuilderComponent {
-  private readonly data = inject(DataPort);
-  private readonly audience = inject(AudienceService);
+  private readonly http = inject(HttpClient);
   private readonly router = inject(Router);
   readonly lang = inject(LanguageService);
+  readonly OBJECT_ID = OBJECT_ID;
 
   readonly id = input<string>('');
 
   readonly name = signal('');
-  readonly linked = signal<LinkedTeam[]>([]);
-  readonly directUserIds = signal<string[]>([]);
-  readonly duplicateError = signal<string | null>(null);
+  readonly description = signal('');
+  readonly templateId = signal<string | null>(null);
+
+  readonly creating = signal(false);
+  readonly createError = signal('');
+  readonly createPayload = signal<Record<string, unknown> | null>(null);
+
+  private loadedExistingId: string | null = null;
+
+  constructor() {
+    // effect(), not a constructor-body read: route-bound inputs are set via setInput() after
+    // construction, so reading this.id() directly here would always see its default ''.
+    effect(() => {
+      const id = this.id();
+      if (!id || this.loadedExistingId === id) return;
+      this.loadedExistingId = id;
+      this.templateId.set(id);
+      this.loadExistingTemplate(id);
+    }, { allowSignalWrites: true });
+  }
+
+  private loadExistingTemplate(templateId: string): void {
+    this.http.get<any>(`/networking/rest/record/${OBJECT_ID.distributionTemplate}/${templateId}`, {
+      params: { alt: 'json' }
+    }).pipe(
+      map((response) => response?.platform?.record),
+      catchError((err) => { console.error('Template fetch failed', err); return of(null); })
+    ).subscribe((r) => {
+      if (!r) return;
+      this.name.set(r.distribution_list_tf_distribution_list_name ?? '');
+      this.description.set(r.distribution_list_ta_description ?? '');
+    });
+    this.loadLinkedTeams(templateId);
+    this.loadLinkedUsers(templateId);
+  }
+
+  save(): void {
+    if (!this.name().trim() || this.creating()) return;
+    this.creating.set(true);
+    this.createError.set('');
+    this.createPayload.set({
+      distribution_list_tf_distribution_list_name: this.name().trim(),
+      distribution_list_ta_description: this.description().trim(),
+      layout_id: DISTRIBUTION_LIST_LAYOUT_ID,
+      _request_id: crypto.randomUUID(),
+      _gridSectionsRecords_: {},
+      last_modified_timestamp: ''
+    });
+  }
+
+  onCreateResponse(response: any): void {
+    this.creating.set(false);
+    this.createPayload.set(null);
+    const newId = String(response?.record?.id ?? response?.id ?? '');
+    this.templateId.set(newId);
+    this.loadLinkedTeams(newId);
+    this.loadLinkedUsers(newId);
+  }
+
+  onCreateError(error: any): void {
+    this.creating.set(false);
+    this.createPayload.set(null);
+    this.createError.set(error?.error?.__exception_msg__ ?? (this.lang.isGerman() ? 'Speichern fehlgeschlagen.' : 'Save failed.'));
+  }
+
   readonly teamQuery = signal('');
   readonly userQuery = signal('');
   readonly showTeamPicker = signal(false);
   readonly showUserPicker = signal(false);
-  readonly saving = signal(false);
+  readonly newTeamIncludeHierarchy = signal(false);
 
-  private readonly teams = toSignal(this.data.teams(), { initialValue: [] as Team[] });
-  private readonly users = toSignal(this.data.users(), { initialValue: [] as AppUser[] });
-  private readonly templates = toSignal(this.data.templates(), { initialValue: [] as DistributionTemplate[] });
+  readonly linkedTeams = signal<LinkedTeam[]>([]);
+  readonly linkedUsers = signal<LinkedUser[]>([]);
+  readonly teamError = signal('');
+  readonly userError = signal('');
+  readonly teamsLoading = signal(true);
+  readonly usersLoading = signal(true);
 
-  private seeded = false;
-  /** One-time seed once the existing template shows up in the list — edits afterwards are local. */
-  private readonly seedFromExisting = effect(() => {
-    if (this.seeded || !this.id()) return;
-    const tpl = this.templates().find((t) => t.id === this.id());
-    if (!tpl) return;
-    this.name.set(tpl.name);
-    this.linked.set(tpl.teams.map((t) => ({ ...t })));
-    this.directUserIds.set([...tpl.userIds]);
-    this.seeded = true;
-  }, { allowSignalWrites: true });
+  private static readonly PAGE_SIZE = 20;
+  private static readonly MAX_PAGES = 8;
+  private static readonly MAX_RETRIES_PER_PAGE = 5;
 
-  /** Same dedup/provenance algorithm as AudienceBuilderComponent. */
-  readonly members = computed(() => {
-    const rank = { direct: 3, team: 2, hierarchy: 1 } as const;
-    const out = new Map<string, { user: AppUser; provenance: 'direct' | 'team' | 'hierarchy' }>();
-    const add = (u: AppUser | undefined, p: 'direct' | 'team' | 'hierarchy') => {
-      if (!u?.active) return;
-      const prev = out.get(u.id);
-      if (prev && rank[prev.provenance] >= rank[p]) return;
-      out.set(u.id, { user: u, provenance: p });
-    };
-    this.directUserIds().forEach((id) => add(this.users().find((u) => u.id === id), 'direct'));
-    this.linked().forEach((l) => {
-      this.users().filter((u) => u.primaryTeamId === l.teamId).forEach((u) => add(u, 'team'));
-      if (l.includeTeamHierarchy) {
-        this.audience.descendants(this.teams(), l.teamId).forEach((child) =>
-          this.users().filter((u) => u.primaryTeamId === child.id).forEach((u) => add(u, 'hierarchy')));
+  /** Same real Information Manager Teams fetch as AudienceBuilderComponent — same known list-endpoint unreliability, same retry-hardened approach. */
+  private readonly teams = toSignal(
+    this.fetchAllPaged<OrgTeam>(
+      OBJECT_ID.teams,
+      'id,name,information_manager_teams_lookup_self_referencing',
+      (r): OrgTeam => ({ id: r.id, name: r.name, parentId: r.information_manager_teams_lookup_self_referencing?.content ?? '' })
+    ).pipe(map((teams) => { this.teamsLoading.set(false); return teams; })),
+    { initialValue: [] as OrgTeam[] }
+  );
+
+  private readonly users = toSignal(
+    this.fetchAllPaged<OrgUser>(
+      OBJECT_ID.users,
+      'id,information_manager_user_text_field_first_name,information_manager_user_text_field_last_name,information_manager_user_email_address_email',
+      (r): OrgUser => {
+        const first = r.information_manager_user_text_field_first_name ?? '';
+        const last = r.information_manager_user_text_field_last_name ?? '';
+        const email = r.information_manager_user_email_address_email ?? '';
+        const fullName = `${first} ${last}`.trim();
+        return { id: r.id, label: fullName ? `${fullName} (${email})` : email };
       }
-    });
-    return [...out.values()];
-  });
+    ).pipe(map((users) => { this.usersLoading.set(false); return users; })),
+    { initialValue: [] as OrgUser[] }
+  );
 
   readonly addableTeams = computed(() => {
     const q = this.teamQuery().trim().toLowerCase();
+    const linkedIds = new Set(this.linkedTeams().map((t) => t.teamId));
     return this.teams()
-      .filter((t) => !this.linked().some((l) => l.teamId === t.id))
-      .filter((t) => !q || t.information_manager_teams_textfield_name.toLowerCase().includes(q));
+      .filter((t) => !linkedIds.has(t.id))
+      .filter((t) => !q || t.name.toLowerCase().includes(q));
   });
 
   readonly addableUsers = computed(() => {
     const q = this.userQuery().trim().toLowerCase();
-    if (!q) return [];
-    const already = new Set(this.members().map((m) => m.user.id));
+    const linkedIds = new Set(this.linkedUsers().map((u) => u.userId));
     return this.users()
-      .filter((u) => u.active && !already.has(u.id))
-      .filter((u) => `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
-      .slice(0, 8);
+      .filter((u) => !linkedIds.has(u.id))
+      .filter((u) => !q || u.label.toLowerCase().includes(q));
   });
 
-  teamName = (id: string) =>
-    this.teams().find((t) => t.id === id)?.information_manager_teams_textfield_name ?? id;
-
-  private teamMemberCount = (id: string) => this.teams().find((t) => t.id === id)?.memberCount ?? 0;
-
-  rowCounts(l: LinkedTeam): { direct: number; fromSubTeams: number } {
-    const direct = this.teamMemberCount(l.teamId);
-    const fromSubTeams = l.includeTeamHierarchy
-      ? this.audience.descendants(this.teams(), l.teamId).reduce((sum, c) => sum + c.memberCount, 0)
-      : 0;
-    return { direct, fromSubTeams };
+  private fetchPageWithRetry<T extends { id: string }>(
+    objectId: string, fieldList: string, mapRow: (r: any) => T, page: number, pageSize: number, attempt = 0
+  ): Observable<{ rows: T[]; total: number }> {
+    return this.http.get<any>(`/networking/rest/record/${objectId}`, {
+      params: { fieldList, page, pageSize, getTotalRecordCount: true, alt: 'json' }
+    }).pipe(
+      map((response) => ({
+        rows: [response?.platform?.record ?? []].flat().map(mapRow),
+        total: Number(response?.platform?.totalRecordCount ?? 0)
+      })),
+      catchError((err) => { console.error(`Fetch ${objectId} (page ${page}, attempt ${attempt}) failed`, err); return of({ rows: [] as T[], total: 0 }); }),
+      switchMap((result) => {
+        const cameBackShort = result.rows.length < pageSize;
+        if (cameBackShort && attempt < TemplateBuilderComponent.MAX_RETRIES_PER_PAGE) {
+          return this.fetchPageWithRetry(objectId, fieldList, mapRow, page, pageSize, attempt + 1);
+        }
+        return of(result);
+      })
+    );
   }
 
-  childTeams = (teamId: string): Team[] => this.audience.descendants(this.teams(), teamId);
+  private fetchAllPaged<T extends { id: string }>(
+    objectId: string, fieldList: string, mapRow: (r: any) => T, pageSize: number = TemplateBuilderComponent.PAGE_SIZE
+  ): Observable<T[]> {
+    return new Observable<T[]>((subscriber) => {
+      const seen = new Map<string, T>();
+      let total = Infinity;
 
-  link(teamId: string): void {
-    const covered = this.linked().find((l) =>
-      l.includeTeamHierarchy && this.audience.descendants(this.teams(), l.teamId).some((d) => d.id === teamId));
-    if (covered) {
-      this.duplicateError.set(SERVER_MESSAGE.duplicateViaParent(this.teamName(teamId), this.teamName(covered.teamId)));
-      return;
-    }
-    this.duplicateError.set(null);
-    this.linked.update((l) => [...l, { teamId, includeTeamHierarchy: false }]);
-    this.teamQuery.set('');
+      const nextPage = (page: number) => {
+        if (page > TemplateBuilderComponent.MAX_PAGES || seen.size >= total) {
+          subscriber.next([...seen.values()]);
+          subscriber.complete();
+          return;
+        }
+        this.fetchPageWithRetry(objectId, fieldList, mapRow, page, pageSize).subscribe((result) => {
+          if (result.total > 0) total = result.total;
+          result.rows.forEach((r) => seen.set(r.id, r));
+          nextPage(page + 1);
+        });
+      };
+      nextPage(1);
+    });
   }
 
-  unlink(teamId: string): void { this.linked.update((l) => l.filter((x) => x.teamId !== teamId)); }
-
-  toggleHierarchy(teamId: string): void {
-    this.linked.update((l) => l.map((x) => x.teamId === teamId ? { ...x, includeTeamHierarchy: !x.includeTeamHierarchy } : x));
+  private loadLinkedTeams(templateId: string): void {
+    this.http.get<any>(`/networking/rest/record/${DISTRIBUTION_LIST_TEAMS_OBJECT}`, {
+      params: {
+        filter: `(distributionlist_record equals '${templateId}')`,
+        fieldList: 'id,teams_record,distribution_list_teams_cb_include_team_hierarchy,date_modified',
+        alt: 'json'
+      }
+    }).pipe(
+      map((response): LinkedTeam[] =>
+        [response?.platform?.record ?? []].flat().map((r: any) => ({
+          recordId: r.id,
+          teamId: r.teams_record?.content ?? r.teams_record?.id ?? '',
+          teamName: r.teams_record?.displayValue ?? '',
+          includeTeamHierarchy: isCheckboxActive(r.distribution_list_teams_cb_include_team_hierarchy),
+          lastModifiedTimestamp: r.date_modified ?? ''
+        }))),
+      catchError((err) => { console.error('Linked teams fetch failed', err); return of([] as LinkedTeam[]); })
+    ).subscribe((teams) => this.linkedTeams.set(teams));
   }
 
-  addUser(userId: string): void {
-    this.directUserIds.update((ids) => ids.includes(userId) ? ids : [...ids, userId]);
-    this.userQuery.set('');
+  /** Same one-way pattern as the folder's own Audience panel: only false → true, never back off. */
+  enableHierarchy(team: LinkedTeam): void {
+    if (team.includeTeamHierarchy) return;
+    this.teamError.set('');
+    this.http.patch<any>(`/networking/solution/ServiceDesk/record/${DISTRIBUTION_LIST_TEAMS_OBJECT}/${team.recordId}`, {
+      distribution_list_teams_cb_include_team_hierarchy: '1',
+      layout_id: DISTRIBUTION_LIST_TEAMS_LAYOUT_ID,
+      last_modified_timestamp: team.lastModifiedTimestamp
+    }).subscribe({
+      next: () => this.linkedTeams.update((teams) =>
+        teams.map((t) => t.recordId === team.recordId ? { ...t, includeTeamHierarchy: true } : t)),
+      error: (err) => {
+        console.error('Template team hierarchy update failed', err);
+        this.teamError.set(this.lang.isGerman() ? 'Aktualisierung fehlgeschlagen.' : 'Update failed.');
+      }
+    });
   }
 
-  removeUser(userId: string): void {
-    this.directUserIds.update((ids) => ids.filter((id) => id !== userId));
+  addTeam(teamId: string, teamName: string): void {
+    const templateId = this.templateId();
+    if (!templateId) return;
+    this.teamError.set('');
+    const includeTeamHierarchy = this.newTeamIncludeHierarchy();
+    this.http.post<any>(`/networking/solution/ServiceDesk/record/${DISTRIBUTION_LIST_TEAMS_OBJECT}`, {
+      distributionlist_record: templateId,
+      teams_record: teamId,
+      distribution_list_teams_cb_include_team_hierarchy: includeTeamHierarchy ? '1' : '0',
+      layout_id: DISTRIBUTION_LIST_TEAMS_LAYOUT_ID,
+      _request_id: crypto.randomUUID(),
+      _gridSectionsRecords_: {},
+      last_modified_timestamp: ''
+    }, { params: { _uiVersion: 3 } }).subscribe({
+      next: () => {
+        this.loadLinkedTeams(templateId);
+        this.teamQuery.set('');
+        this.newTeamIncludeHierarchy.set(false);
+      },
+      error: (err) => {
+        console.error('Add team failed', err);
+        this.teamError.set(this.lang.isGerman() ? 'Hinzufügen fehlgeschlagen.' : 'Add failed.');
+      }
+    });
   }
 
-  save(): void {
-    if (!this.name().trim()) return;
-    this.saving.set(true);
-    this.data.saveTemplate({
-      id: this.id() || undefined,
-      name: this.name().trim(),
-      teams: this.linked(),
-      userIds: this.directUserIds()
-    }).subscribe(() => {
-      this.saving.set(false);
-      this.router.navigateByUrl('/templates');
+  removeTeam(recordId: string): void {
+    this.http.delete(`/networking/solution/ServiceDesk/record/${DISTRIBUTION_LIST_TEAMS_OBJECT}/${recordId}`).subscribe({
+      next: () => this.linkedTeams.update((teams) => teams.filter((t) => t.recordId !== recordId)),
+      error: (err) => {
+        console.error('Remove team failed', err);
+        this.teamError.set(this.lang.isGerman() ? 'Entfernen fehlgeschlagen.' : 'Remove failed.');
+      }
+    });
+  }
+
+  private loadLinkedUsers(templateId: string): void {
+    this.http.get<any>(`/networking/rest/record/${DISTRIBUTION_LIST_USERS_OBJECT}`, {
+      params: {
+        filter: `(distributionlist_record equals '${templateId}')`,
+        fieldList: 'id,users_record',
+        alt: 'json'
+      }
+    }).pipe(
+      map((response): LinkedUser[] =>
+        [response?.platform?.record ?? []].flat().map((r: any) => ({
+          recordId: r.id,
+          userId: r.users_record?.content ?? r.users_record?.id ?? '',
+          userLabel: r.users_record?.displayValue ?? ''
+        }))),
+      catchError((err) => { console.error('Linked users fetch failed', err); return of([] as LinkedUser[]); })
+    ).subscribe((users) => this.linkedUsers.set(users));
+  }
+
+  addUser(userId: string, userLabel: string): void {
+    const templateId = this.templateId();
+    if (!templateId) return;
+    this.userError.set('');
+    this.http.post<any>(`/networking/solution/ServiceDesk/record/${DISTRIBUTION_LIST_USERS_OBJECT}`, {
+      distributionlist_record: templateId,
+      users_record: userId,
+      layout_id: DISTRIBUTION_LIST_USERS_LAYOUT_ID,
+      _request_id: crypto.randomUUID(),
+      _gridSectionsRecords_: {},
+      last_modified_timestamp: ''
+    }, { params: { _uiVersion: 3 } }).subscribe({
+      next: (response) => {
+        const recordId = String(response?.record?.id ?? response?.id ?? '');
+        this.linkedUsers.update((users) => [...users, { recordId, userId, userLabel }]);
+        this.userQuery.set('');
+      },
+      error: (err) => {
+        console.error('Add user failed', err);
+        this.userError.set(this.lang.isGerman() ? 'Hinzufügen fehlgeschlagen.' : 'Add failed.');
+      }
+    });
+  }
+
+  removeUser(recordId: string): void {
+    this.http.delete(`/networking/solution/ServiceDesk/record/${DISTRIBUTION_LIST_USERS_OBJECT}/${recordId}`).subscribe({
+      next: () => this.linkedUsers.update((users) => users.filter((u) => u.recordId !== recordId)),
+      error: (err) => {
+        console.error('Remove user failed', err);
+        this.userError.set(this.lang.isGerman() ? 'Entfernen fehlgeschlagen.' : 'Remove failed.');
+      }
     });
   }
 }

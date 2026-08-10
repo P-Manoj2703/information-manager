@@ -16,6 +16,9 @@
 .frozen { background: #eef4f8; border: 1px solid #d6e4ee; border-radius: var(--radius-input);
           padding: 14px 18px; font-size: 13px; color: var(--fg-2); line-height: 1.6; margin: 0 0 18px; }
 
+.error { margin:0; background:#fdf0f0; border:1px solid #f3d6d6; border-radius:var(--radius-input);
+         padding:12px 16px; font-size:12px; color:var(--danger); line-height:1.5; }
+
 .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 18px; align-items: start; }
 .card { background:#fff; border:1px solid var(--border-1); border-radius:var(--radius-card);
         padding:22px 24px; display:flex; flex-direction:column; gap:18px;

@@ -42,5 +42,7 @@ export class StatusBadgeComponent {
   readonly status = input.required<AnyStatus>();
   readonly dot = input(true);
   readonly tone = computed(() => TONE[this.status()] ?? 'neutral');
-  readonly label = computed(() => LABEL[this.status()][this.lang.isGerman() ? 0 : 1]);
+  // Falls back to the raw value (or an em dash) instead of throwing when ECAP returns a
+  // status this map doesn't know — e.g. a record whose status field is blank/unset.
+  readonly label = computed(() => LABEL[this.status()]?.[this.lang.isGerman() ? 0 : 1] ?? this.status() ?? '—');
 }

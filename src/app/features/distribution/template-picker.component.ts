@@ -1,11 +1,14 @@
 import { Component, computed, inject, input, output, signal } from '@angular/core';
-import { DistributionTemplate } from '@core/models';
 import { LanguageService } from '@core/i18n/language.service';
+
+/** One row of the real Distribution_Lists object (45aed8d75ae542179befff2799f36532). */
+export interface DistributionTemplateOption { id: string; name: string; }
 
 /**
  * Full-height sidebar next to the audience panels. Presentational only — the parent
- * (AudienceBuilderComponent) owns what "applying" a template actually does (copying
- * members onto the folder); this component just picks one and emits its id.
+ * (AudienceBuilderComponent) owns what "applying" a template actually does (posting
+ * to ECAP's DistributionListAttachController); this component just picks one and
+ * emits its id.
  */
 @Component({
   selector: 'im-template-picker',
@@ -27,11 +30,16 @@ import { LanguageService } from '@core/i18n/language.service';
         <input type="text" class="lookup__input" [value]="query()"
                (input)="query.set($any($event.target).value)"
                [placeholder]="lang.isGerman() ? 'Vorlage suchen…' : 'Search templates…'">
+        @if (loading()) {
+          <span class="lookup__empty">{{ lang.isGerman() ? 'Vorlagen werden geladen…' : 'Loading templates…' }}</span>
+        }
         <div class="add">
           @for (t of options(); track t.id) {
             <button type="button" (click)="pick(t.id)">{{ t.name }}</button>
           } @empty {
-            <span class="lookup__empty">{{ lang.isGerman() ? 'Keine Vorlagen gefunden' : 'No templates found' }}</span>
+            @if (!loading()) {
+              <span class="lookup__empty">{{ lang.isGerman() ? 'Keine Vorlagen gefunden' : 'No templates found' }}</span>
+            }
           }
         </div>
       </div>
@@ -49,8 +57,9 @@ import { LanguageService } from '@core/i18n/language.service';
 export class TemplatePickerComponent {
   readonly lang = inject(LanguageService);
 
-  readonly templates = input.required<DistributionTemplate[]>();
+  readonly templates = input.required<DistributionTemplateOption[]>();
   readonly appliedIds = input<string[]>([]);
+  readonly loading = input(false);
   readonly apply = output<string>();
 
   readonly show = signal(false);

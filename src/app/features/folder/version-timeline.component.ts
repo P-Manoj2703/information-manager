@@ -1,13 +1,29 @@
-import { Component, inject, input } from '@angular/core';
+import { Component, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { toSignal, toObservable } from '@angular/core/rxjs-interop';
-import { switchMap } from 'rxjs';
-import { DataPort } from '@core/services/data.port';
+import { HttpClient } from '@angular/common/http';
+import { catchError, map, of, switchMap } from 'rxjs';
 import { LanguageService } from '@core/i18n/language.service';
+import { INFORMATION_FOLDER_VERSIONS_SECTION_ID, OBJECT_ID } from '@core/objects';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
-import { DocumentVersion } from '@core/models';
+import { VersionStatus } from '@core/models/enums';
 
-/** UC-IP-05 — valid-from → valid-until, exactly one Active. Each entry opens that version's own record. */
+interface VersionRow {
+  id: string;
+  versionLabel: string;
+  status: VersionStatus;
+  dateModified: string | null;
+}
+
+/**
+ * UC-IP-05 — exactly one Active among however many Draft/Inactive versions exist. Each entry
+ * opens that version's own record. Uses the real relatedObjectList endpoint (confirmed live
+ * via network capture of ECAP's own "Versions" related grid on the folder) rather than the
+ * generic rest/record/{oid}?filter=... list endpoint — that generic endpoint proved unreliable
+ * for this exact object/folder combination independent of retries or page size, while
+ * relatedObjectList (what native ECAP itself actually calls) returned all rows correctly on
+ * every attempt.
+ */
 @Component({
   selector: 'im-version-timeline',
   standalone: true,
@@ -24,33 +40,71 @@ import { DocumentVersion } from '@core/models';
             &:hover { background:var(--bg-2); } }
     .id { font-family:var(--font-mono); font-size:13px; font-weight:600; }
     .range { font-size:12px; color:var(--fg-3); }
+    .empty { font-size:13px; color:var(--fg-3); }
   `],
   template: `
-    <ol>
-      @for (v of versions(); track v.id; let last = $last) {
-        <li>
-          <span class="marker">
-            <span class="dot" [class.on]="v.version_picklist_version_status === 'Active'"></span>
-            @if (!last) { <span class="line"></span> }
-          </span>
-          <a class="body" [routerLink]="['/folders', folderId(), 'versions', v.id]">
-            <span><b class="id">{{ v.version_text_field_version_id }}</b>
-              <im-status-badge [status]="v.version_picklist_version_status" [dot]="false" /></span>
-            <span class="range tabular">
-              {{ v.version_date_time_valid_from ? lang.date(v.version_date_time_valid_from) : '—' }}
-              @if (v.version_date_time_valid_until) { — {{ lang.date(v.version_date_time_valid_until) }} }
+    @if (loading()) {
+      <p class="empty">{{ lang.isGerman() ? 'Versionen werden geladen…' : 'Loading versions…' }}</p>
+    } @else if (!versions().length) {
+      <p class="empty">{{ lang.isGerman() ? 'Noch keine Dokumentversion.' : 'No document versions yet.' }}</p>
+    } @else {
+      <ol>
+        @for (v of versions(); track v.id; let last = $last) {
+          <li>
+            <span class="marker">
+              <span class="dot" [class.on]="v.status === 'Active'"></span>
+              @if (!last) { <span class="line"></span> }
             </span>
-          </a>
-        </li>
-      }
-    </ol>
+            <a class="body" [routerLink]="['/folders', folderId(), 'versions', v.id]">
+              <span><b class="id">{{ v.versionLabel }}</b>
+                <im-status-badge [status]="v.status" [dot]="false" /></span>
+              <span class="range tabular">{{ v.dateModified ? lang.date(v.dateModified) : '—' }}</span>
+            </a>
+          </li>
+        }
+      </ol>
+    }
   `
 })
 export class VersionTimelineComponent {
-  private readonly data = inject(DataPort);
+  private readonly http = inject(HttpClient);
   readonly lang = inject(LanguageService);
   readonly folderId = input.required<string>();
+
+  readonly loading = signal(true);
+
   readonly versions = toSignal(
-    toObservable(this.folderId).pipe(switchMap((id) => this.data.versions(id))),
-    { initialValue: [] as DocumentVersion[] });
+    toObservable(this.folderId).pipe(
+      switchMap((folderId) => this.fetchVersions(folderId)),
+      map((rows) => { this.loading.set(false); return rows; })
+    ),
+    { initialValue: [] as VersionRow[] }
+  );
+
+  private fetchVersions(folderId: string) {
+    if (!folderId) return of([] as VersionRow[]);
+    return this.http.get<any>('/networking/solution/ServiceDesk/relatedObjectList', {
+      params: {
+        record_id: folderId,
+        p_objectId: OBJECT_ID.informationFolder,
+        related_section_id: INFORMATION_FOLDER_VERSIONS_SECTION_ID,
+        paginationRequired: true, page: 1, pageSize: 200,
+        _uiVersion: 3, sortBy: 'date_modified', sortOrder: 'desc'
+      }
+    }).pipe(
+      map((response): VersionRow[] => {
+        const rows = response?.[INFORMATION_FOLDER_VERSIONS_SECTION_ID]?.relatedInfoData ?? [];
+        return rows.map((r: any): VersionRow => ({
+          id: r.id,
+          // record_locator is "{folder name} - {version id}" — the version id itself isn't
+          // one of this related-list widget's configured columns, so it's parsed out here.
+          versionLabel: (r.record_locator ?? '').split(' - ').pop() || r.id,
+          // Plain string here, unlike the generic REST endpoint's {displayValue, content} shape.
+          status: r.version_picklist_version_status ?? 'Draft',
+          dateModified: r.date_modified || null
+        }));
+      }),
+      catchError((err) => { console.error('Document Version list fetch failed', err); return of([] as VersionRow[]); })
+    );
+  }
 }

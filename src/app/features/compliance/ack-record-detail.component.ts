@@ -1,12 +1,35 @@
-import { Component, computed, inject, input } from '@angular/core';
+import { Component, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { DataPort } from '@core/services/data.port';
+import { toSignal, toObservable } from '@angular/core/rxjs-interop';
+import { HttpClient } from '@angular/common/http';
+import { Observable, catchError, map, of, switchMap } from 'rxjs';
 import { LanguageService } from '@core/i18n/language.service';
+import { OBJECT_ID } from '@core/objects';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
-import { Acknowledgement } from '@core/models';
+import { AckStatus } from '@core/models/enums';
 
-/** Read-only record view for a single acknowledgement, reached from the chase table. */
+interface AckRecord {
+  id: string;
+  acknowledgment_textfield_employee: string;
+  documentVersionLabel: string;
+  acknowledgement_date_deadline_date: string;
+  acknowledgment_picklist_status: AckStatus;
+  description: string;
+}
+
+/**
+ * Real record view for a single acknowledgement, reached from the chase table. Fetched via
+ * single-record GET (always reliable in this tenant, unlike the generic list endpoint) rather
+ * than filtering a bulk fetch — mirrors every other record-detail screen in this app.
+ *
+ * Field set: ECAP's own Default Layout rule "CU-Disable and Hide Fields" (condition "true" —
+ * applies to every viewer) permanently hides Email, User, Information Folder, Information
+ * Folder Created By, Responsible Team, and the "User Information" message on this object's own
+ * record page, leaving Employee/Document Version/Description/Acknowledgment Status/Deadline
+ * Date as the only Basic Information fields ever shown there. Created By/Modified By/Date
+ * Created/Date Modified are technically still visible on ECAP's own page (just read-only), but
+ * dropped here too per explicit request — this screen intentionally shows less than ECAP does.
+ */
 @Component({
   selector: 'im-ack-record-detail',
   standalone: true,
@@ -24,48 +47,66 @@ import { Acknowledgement } from '@core/models';
 
         <div class="grid">
           <div class="field">
-            <span class="label">{{ lang.isGerman() ? 'Person' : 'Person' }}</span>
+            <span class="label">{{ lang.isGerman() ? 'Mitarbeiter' : 'Employee' }}</span>
             <span>{{ a.acknowledgment_textfield_employee }}</span>
           </div>
           <div class="field">
-            <span class="label">{{ lang.isGerman() ? 'E-Mail' : 'Email' }}</span>
-            <span>{{ a.acknowledgment_email_address_email }}</span>
-          </div>
-          <div class="field">
-            <span class="label">{{ lang.t('folders') }}</span>
-            <a [routerLink]="['/folders', a.acknowledgement_lookup_information_folder]">
-              {{ a.acknowledgement_textfield_information_folder_name }}
-            </a>
-          </div>
-          <div class="field">
             <span class="label">{{ lang.t('version') }}</span>
-            <span class="mono">{{ a.documentversion_record }}</span>
+            <span class="mono">{{ a.documentVersionLabel || '—' }}</span>
           </div>
-          <div class="field">
-            <span class="label">{{ lang.t('deadline') }}</span>
-            <span>{{ lang.date(a.acknowledgement_date_deadline_date) }}</span>
+          <div class="field wide">
+            <span class="label">{{ lang.isGerman() ? 'Beschreibung' : 'Description' }}</span>
+            <span>{{ a.description || '—' }}</span>
           </div>
           <div class="field">
             <span class="label">{{ lang.t('status') }}</span>
             <im-status-badge [status]="a.acknowledgment_picklist_status" [dot]="false" />
           </div>
-          <div class="field wide">
-            <span class="label">{{ lang.t('messageFrom') }}</span>
-            <div class="richtext" [innerHTML]="a.acknowledgment_richtextarea_user_information"></div>
+          <div class="field">
+            <span class="label">{{ lang.t('deadline') }}</span>
+            <span>{{ a.acknowledgement_date_deadline_date ? lang.date(a.acknowledgement_date_deadline_date) : '—' }}</span>
           </div>
         </div>
       </section>
-    } @else {
+    } @else if (!loading()) {
       <p class="missing">{{ lang.isGerman() ? 'Kenntnisnahme nicht gefunden.' : 'Acknowledgement not found.' }}</p>
     }
   `
 })
 export class AckRecordDetailComponent {
-  private readonly data = inject(DataPort);
+  private readonly http = inject(HttpClient);
   readonly lang = inject(LanguageService);
 
   readonly id = input.required<string>();
+  readonly loading = signal(true);
 
-  private readonly all = toSignal(this.data.acknowledgements({}), { initialValue: [] as Acknowledgement[] });
-  readonly ack = computed(() => this.all().find((a) => a.id === this.id()));
+  readonly ack = toSignal(
+    toObservable(this.id).pipe(
+      switchMap((id) => this.fetchAck(id)),
+      map((a) => { this.loading.set(false); return a; })
+    ),
+    { initialValue: null as AckRecord | null }
+  );
+
+  private fetchAck(id: string): Observable<AckRecord | null> {
+    if (!id) return of(null);
+    return this.http.get<any>(`/networking/rest/record/${OBJECT_ID.acknowledgement}/${id}`, {
+      params: { alt: 'json' }
+    }).pipe(
+      map((response): AckRecord | null => {
+        const r = response?.platform?.record;
+        if (!r) return null;
+        return {
+          id: r.id,
+          acknowledgment_textfield_employee: r.acknowledgment_textfield_employee ?? '',
+          documentVersionLabel: r.documentversion_record?.displayValue ?? '',
+          acknowledgement_date_deadline_date: r.acknowledgement_date_deadline_date ?? '',
+          // Picklist fields come back as {displayValue, content} objects from this endpoint, not plain strings.
+          acknowledgment_picklist_status: (r.acknowledgment_picklist_status?.content ?? 'None') as AckStatus,
+          description: r.description ?? ''
+        };
+      }),
+      catchError((err) => { console.error('Acknowledgement fetch failed', err); return of(null); })
+    );
+  }
 }

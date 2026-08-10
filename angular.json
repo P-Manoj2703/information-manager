@@ -22,6 +22,7 @@
               "src/assets"
             ],
             "styles": [
+              "node_modules/material-icons/iconfont/material-icons.css",
               "src/styles/styles.scss"
             ],
             "stylePreprocessorOptions": {
@@ -35,8 +36,8 @@
               "budgets": [
                 {
                   "type": "initial",
-                  "maximumWarning": "600kb",
-                  "maximumError": "1mb"
+                  "maximumWarning": "1.5mb",
+                  "maximumError": "3mb"
                 }
               ],
               "outputHashing": "all"
@@ -50,6 +51,9 @@
         },
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
+          "options": {
+            "proxyConfig": "proxy.config.js"
+          },
           "configurations": {
             "development": {
               "buildTarget": "information-manager:build:development"
