@@ -1,6 +1,6 @@
-import { Component, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { catchError, map, of } from 'rxjs';
+import { Component, computed, effect, inject, signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { catchError, map, of, switchMap } from 'rxjs';
 import { RouterLink } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
@@ -79,10 +79,10 @@ import { ActivateDialogComponent } from './activate-dialog.component';
               <input value="Draft" disabled>
             </label>
             <label>{{ lang.isGerman() ? 'Verantwortliches Team' : 'Responsible team' }} *
-              <!-- TEMP: hardcoded to the "My Team" junction record while the Responsible team
-                   lookup dropdown is parked — see comment on responsibleTeamId below. -->
               <select formControlName="information_folder_lookup_responsible_team" required>
-                <option [value]="responsibleTeamId">My Team</option>
+                @for (t of myTeams(); track t.recordId) {
+                  <option [value]="t.recordId">{{ t.teamName }}</option>
+                }
               </select>
             </label>
             <label>{{ lang.isGerman() ? 'Frist (Tage)' : 'Deadline (days)' }} *
@@ -136,17 +136,34 @@ export class FolderWizardComponent {
   readonly createPayload = signal<Record<string, unknown> | null>(null);
 
   /**
-   * TEMP: information_folder_lookup_responsible_team's real target is the
-   * Information Manager Teams x Users junction object
-   * (2390c38b2ffe45feab68d882cc2a0105), scoped to the current user's own
-   * membership rows. The generic LOOKUP.TABLEDATA REST endpoint used by
-   * LookupService silently drops rows past a low page-size threshold
-   * (confirmed live: pageSize 100 -> 17 rows, pageSize 200 -> 0, out of 117
-   * total), so it can't reliably back a dropdown yet. Hardcoded to this
-   * user's real "My Team" junction record id, confirmed live via ecap-agent
-   * against the same object, pending a real fix to the paging issue.
+   * information_folder_lookup_responsible_team's real target is the Information Manager
+   * Teams x Users junction object (2390c38b2ffe45feab68d882cc2a0105) — one row per team a
+   * given user belongs to. Fetching it unfiltered is the same unreliable LOOKUP.TABLEDATA
+   * pattern seen elsewhere in this tenant (confirmed live: pageSize 100 -> 32 of 132 rows,
+   * pageSize 200 -> 0 rows) — but filtering by this user's own id sidesteps it entirely: the
+   * result is naturally small (their own team memberships), and came back exact and complete
+   * on every live check (recordCount === totalRecordCount), no retry-hardening needed.
    */
-  readonly responsibleTeamId = '1828071854';
+  readonly myTeams = toSignal(
+    toObservable(computed(() => this.session.session().userId)).pipe(
+      switchMap((userId) => {
+        if (!userId) return of([] as { recordId: string; teamName: string }[]);
+        return this.http.get<any>(`/networking/rest/record/${OBJECT_ID.informationManagerTeamsUsers}`, {
+          params: {
+            filter: `(imt_if_text_field_copy_userId equals '${userId}')`,
+            fieldList: 'id,informationmanagerteams_record', pageSize: 50, getTotalRecordCount: true, alt: 'json'
+          }
+        }).pipe(
+          map((response): { recordId: string; teamName: string }[] =>
+            [response?.platform?.record ?? []].flat().map((r: any) => ({
+              recordId: r.id, teamName: r.informationmanagerteams_record?.displayValue ?? ''
+            }))),
+          catchError((err) => { console.error('My teams fetch failed', err); return of([] as { recordId: string; teamName: string }[]); })
+        );
+      })
+    ),
+    { initialValue: [] as { recordId: string; teamName: string }[] }
+  );
 
   /**
    * Fetched live from the same CaseRecordPage form-info endpoint ECAP's own
@@ -188,12 +205,22 @@ export class FolderWizardComponent {
     information_folder_textfield_short_name: [''],
     information_folder_textfield_description: [''],
     information_folder_number_deadlinedays: [14, [Validators.required, Validators.min(1)]],
-    information_folder_lookup_responsible_team: [this.responsibleTeamId, Validators.required],
+    information_folder_lookup_responsible_team: ['', Validators.required],
     information_folder_picklist_confidentiality_level: ['Internal', Validators.required],
     information_folder_textfield_document_category: [''],
     information_folder_multi_select_picklist_document_language: this.fb.nonNullable.control<string[]>([]),
     information_folder_richtext_area_user_information: ['', Validators.required]
   });
+
+  /** Defaults the selection once the real fetch resolves — "My Team" if the user belongs to it, else the first real team. */
+  constructor() {
+    effect(() => {
+      const teams = this.myTeams();
+      if (!teams.length || this.form.controls.information_folder_lookup_responsible_team.value) return;
+      const mine = teams.find((t) => t.teamName === 'My Team') ?? teams[0];
+      this.form.controls.information_folder_lookup_responsible_team.setValue(mine.recordId);
+    }, { allowSignalWrites: true });
+  }
 
   saveDraft(): void {
     if (this.form.invalid || this.busy()) return;

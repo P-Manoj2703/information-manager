@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { RecordListDirective, RecordsPayloadMeta, RecordsResponseMeta } from '@escriba/cui-ecap-runtime';
@@ -7,6 +7,7 @@ import { AckStatus } from '@core/models';
 import { LanguageService } from '@core/i18n/language.service';
 import { ACKNOWLEDGEMENT_VIEW_ID, OBJECT_ID } from '@core/objects';
 import { FilterChipsComponent, Chip } from '@shared/ui/filter-chips.component';
+import { PagerComponent } from '@shared/ui/pager.component';
 
 interface DocRow {
   ackId: string;
@@ -30,7 +31,7 @@ interface DocRow {
 @Component({
   selector: 'im-my-documents',
   standalone: true,
-  imports: [RouterLink, RecordListDirective, FilterChipsComponent],
+  imports: [RouterLink, RecordListDirective, FilterChipsComponent, PagerComponent],
   styles: [`
     .note { background: #fff; border: 1px solid var(--border-1); border-radius: var(--radius-input);
             padding: 12px 16px; font-size: 13px; color: var(--fg-2); margin-bottom: 16px; }
@@ -66,7 +67,7 @@ interface DocRow {
         <th>{{ lang.t('documents') }}</th><th>{{ lang.t('version') }}</th><th></th>
       </tr></thead>
       <tbody>
-        @for (r of visibleRows(); track r.ackId) {
+        @for (r of pagedRows(); track r.ackId) {
           <tr>
             <td>
               @if (filesFor(r.versionId).length) {
@@ -85,6 +86,9 @@ interface DocRow {
         }
       </tbody>
     </table>
+    @if (visibleRows().length) {
+      <im-pager [total]="visibleRows().length" [(page)]="currentPage" [(pageSize)]="pageSize" />
+    }
   `
 })
 export class MyDocumentsComponent {
@@ -152,6 +156,18 @@ export class MyDocumentsComponent {
     const status: AckStatus = f === 'pending' ? 'Pending' : f === 'overdue' ? 'Overdue' : 'Done';
     return this.rows().filter((r) => r.status === status);
   });
+
+  readonly pageSize = signal(20);
+  readonly currentPage = signal(1);
+
+  readonly pagedRows = computed(() => {
+    const start = (this.currentPage() - 1) * this.pageSize();
+    return this.visibleRows().slice(start, start + this.pageSize());
+  });
+
+  constructor() {
+    effect(() => { this.filter(); this.pageSize(); this.currentPage.set(1); }, { allowSignalWrites: true });
+  }
 
   /** Fetches each unique version's real file list once rows settle — skips ids already fetched. */
   private loadFileNames(): void {

@@ -8,6 +8,7 @@ import { AckStatus } from '@core/models';
 import { LanguageService } from '@core/i18n/language.service';
 import { ACKNOWLEDGEMENT_VIEW_ID, OBJECT_ID } from '@core/objects';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
+import { PagerComponent } from '@shared/ui/pager.component';
 
 interface MonitorRow {
   id: string;
@@ -54,7 +55,7 @@ const STATUS_OPTIONS: AckStatus[] = ['Pending', 'Overdue', 'Done', 'Obsolete', '
 @Component({
   selector: 'im-monitoring',
   standalone: true,
-  imports: [RouterLink, FormsModule, RecordListDirective, StatusBadgeComponent],
+  imports: [RouterLink, FormsModule, RecordListDirective, StatusBadgeComponent, PagerComponent],
   styleUrl: './monitoring.component.scss',
   template: `
     @for (payload of payloads(); track $index) {
@@ -98,7 +99,7 @@ const STATUS_OPTIONS: AckStatus[] = ['Pending', 'Overdue', 'Done', 'Obsolete', '
           <th>{{ lang.t('deadline') }}</th>
         </tr></thead>
         <tbody>
-          @for (r of rows(); track r.id) {
+          @for (r of pagedRows(); track r.id) {
             <tr>
               <td><input type="checkbox" [checked]="selected().has(r.id)" (change)="toggleOne(r.id)" /></td>
               <td class="mono">{{ r.caseNumber }}</td>
@@ -114,6 +115,9 @@ const STATUS_OPTIONS: AckStatus[] = ['Pending', 'Overdue', 'Done', 'Obsolete', '
         </tbody>
       </table>
     </div>
+    @if (rows().length) {
+      <im-pager [total]="rows().length" [(page)]="currentPage" [(pageSize)]="pageSize" />
+    }
 
     @if (editing()) {
       <div class="backdrop" (click)="editing.set(false)">
@@ -182,6 +186,10 @@ export class MonitoringComponent {
 
   readonly statusOptions = STATUS_OPTIONS;
 
+  constructor() {
+    effect(() => { this.pageSize(); this.currentPage.set(1); }, { allowSignalWrites: true });
+  }
+
   readonly payloads = computed<RecordsPayloadMeta[]>(() => {
     this.refreshTick();
     return [{
@@ -196,6 +204,14 @@ export class MonitoringComponent {
   readonly rows = computed(() => this.rowsSignal());
 
   readonly selected = signal<Set<string>>(new Set());
+
+  readonly pageSize = signal(20);
+  readonly currentPage = signal(1);
+
+  readonly pagedRows = computed(() => {
+    const start = (this.currentPage() - 1) * this.pageSize();
+    return this.rows().slice(start, start + this.pageSize());
+  });
 
   onResponse(response: RecordsResponseMeta): void {
     const mapped = (response.listData?.recordsList ?? []).map((raw: any): MonitorRow => ({

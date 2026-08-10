@@ -9,6 +9,7 @@ import { ACKNOWLEDGEMENT_VIEW_ID, OBJECT_ID } from '@core/objects';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
 import { FilterChipsComponent, Chip } from '@shared/ui/filter-chips.component';
 import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-filter.component';
+import { PagerComponent } from '@shared/ui/pager.component';
 
 /**
  * UC-IP-06 / UC-CMP-03. Person-level chase across folders.
@@ -32,7 +33,7 @@ import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-fil
   standalone: true,
   imports: [
     RouterLink, RecordListDirective, StatusBadgeComponent, FilterChipsComponent,
-    ColumnFilterComponent
+    ColumnFilterComponent, PagerComponent
   ],
   styleUrl: './chase-table.component.scss',
   template: `
@@ -76,7 +77,7 @@ import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-fil
             </th>
           </tr></thead>
           <tbody>
-            @for (a of rows(); track a.id) {
+            @for (a of pagedRows(); track a.id) {
               <tr>
                 <td>
                   <a class="person" [routerLink]="['/acknowledgements', a.id]">
@@ -99,6 +100,10 @@ import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-fil
           </tbody>
         </table>
       </div>
+
+    @if (rows().length) {
+      <im-pager [total]="rows().length" [(page)]="currentPage" [(pageSize)]="pageSize" />
+    }
   `
 })
 export class ChaseTableComponent {
@@ -131,10 +136,21 @@ export class ChaseTableComponent {
   private readonly ackPartials = signal<Acknowledgement[][]>([]);
   private readonly all = computed(() => this.ackPartials().flat());
 
+  readonly pageSize = signal(20);
+  readonly currentPage = signal(1);
+
   constructor() {
     effect(() => {
       const count = this.payloads().length;
       this.ackPartials.set(Array.from({ length: count }, () => []));
+    }, { allowSignalWrites: true });
+
+    // Switching chips/filters/page size can shrink or reorder the set — land back on page 1
+    // so the pager never gets stuck past the new last page.
+    effect(() => {
+      this.filter(); this.folderFilter(); this.versionFilter(); this.deadlineFilter();
+      this.statusFilter(); this.pageSize();
+      this.currentPage.set(1);
     }, { allowSignalWrites: true });
   }
 
@@ -227,6 +243,11 @@ export class ChaseTableComponent {
       (!version.length || version.includes(a.documentversion_record)) &&
       (!deadline.length || deadline.includes(a.acknowledgement_date_deadline_date)) &&
       (!status.length || status.includes(a.acknowledgment_picklist_status)));
+  });
+
+  readonly pagedRows = computed(() => {
+    const start = (this.currentPage() - 1) * this.pageSize();
+    return this.rows().slice(start, start + this.pageSize());
   });
 
   exportCsv(): void {

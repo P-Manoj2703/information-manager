@@ -1,10 +1,11 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, map, of, switchMap } from 'rxjs';
 import { LanguageService } from '@core/i18n/language.service';
 import { OBJECT_ID } from '@core/objects';
+import { PagerComponent } from '@shared/ui/pager.component';
 
 const DISTRIBUTION_LIST_TEAMS_OBJECT = '4c8a796eb68640e790ceda13abb8e9e1';
 const DISTRIBUTION_LIST_USERS_OBJECT = 'e180bc457fc9435ab8f993f475ad0a9c';
@@ -19,7 +20,7 @@ interface TemplateRow { id: string; name: string; teamCount: number; userCount: 
 @Component({
   selector: 'im-template-list',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, PagerComponent],
   styles: [`
     .bar { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
     .intro { font-size:13px; color:var(--fg-2); max-width:70ch; line-height:1.6; margin:0; }
@@ -51,7 +52,7 @@ interface TemplateRow { id: string; name: string; teamCount: number; userCount: 
       <table>
         <thead><tr><th>{{ lang.t('templates') }}</th><th>{{ lang.isGerman() ? 'Organisationseinheiten' : 'Organisational units' }}</th><th>{{ lang.t('users') }}</th></tr></thead>
         <tbody>
-          @for (t of templates(); track t.id) {
+          @for (t of pagedTemplates(); track t.id) {
             <tr>
               <td><a [routerLink]="['/templates', t.id]">{{ t.name }}</a></td>
               <td>{{ t.teamCount }}</td>
@@ -62,6 +63,9 @@ interface TemplateRow { id: string; name: string; teamCount: number; userCount: 
           }
         </tbody>
       </table>
+      @if (templates().length) {
+        <im-pager [total]="templates().length" [(page)]="currentPage" [(pageSize)]="pageSize" />
+      }
     }
   `
 })
@@ -75,6 +79,18 @@ export class TemplateListComponent {
     this.fetchTemplates().pipe(map((rows) => { this.loading.set(false); return rows; })),
     { initialValue: [] as TemplateRow[] }
   );
+
+  readonly pageSize = signal(20);
+  readonly currentPage = signal(1);
+
+  readonly pagedTemplates = computed(() => {
+    const start = (this.currentPage() - 1) * this.pageSize();
+    return this.templates().slice(start, start + this.pageSize());
+  });
+
+  constructor() {
+    effect(() => { this.pageSize(); this.currentPage.set(1); }, { allowSignalWrites: true });
+  }
 
   private static readonly PAGE_SIZE = 5;
   private static readonly MAX_PAGES = 8;

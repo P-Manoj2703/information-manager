@@ -11,12 +11,13 @@ import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
 import { FilterChipsComponent, Chip } from '@shared/ui/filter-chips.component';
 import { EmptyStateComponent } from '@shared/ui/empty-state.component';
 import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-filter.component';
+import { PagerComponent } from '@shared/ui/pager.component';
 
 /** Saved views from the tenant: My / My Teams × Active / Draft / Inactive. */
 @Component({
   selector: 'im-folder-list',
   standalone: true,
-  imports: [RouterLink, RecordListDirective, StatusBadgeComponent, FilterChipsComponent, EmptyStateComponent, ColumnFilterComponent],
+  imports: [RouterLink, RecordListDirective, StatusBadgeComponent, FilterChipsComponent, EmptyStateComponent, ColumnFilterComponent, PagerComponent],
   styles: [`
     .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
     .bar .spacer { margin-left: auto; }
@@ -82,7 +83,7 @@ import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-fil
         <th></th>
       </tr></thead>
       <tbody>
-        @for (f of visible(); track f.id) {
+        @for (f of pagedVisible(); track f.id) {
           <tr>
             <td>
               <a class="name" [routerLink]="['/folders', f.id]">{{ f.information_folder_textfield_name }}</a>
@@ -116,6 +117,8 @@ import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-fil
     @if (!visible().length) {
       <im-empty-state [title]="lang.isGerman() ? 'Keine Informationsordner in dieser Ansicht' : 'No information folders in this view'"
                       [body]="lang.isGerman() ? 'Wechseln Sie die Ansicht oder legen Sie einen neuen Ordner an.' : 'Switch the view or create a new folder.'" />
+    } @else {
+      <im-pager [total]="visible().length" [(page)]="currentPage" [(pageSize)]="pageSize" />
     }
   `
 })
@@ -153,7 +156,23 @@ export class FolderListComponent {
       const count = this.payloads().length;
       this.folderPartials.set(Array.from({ length: count }, () => []));
     });
+
+    // Any change that could shrink or reorder the visible set should land back on page 1 —
+    // otherwise switching tabs/filters can leave the pager stuck past the new last page.
+    effect(() => {
+      this.view(); this.confidentialityFilter(); this.statusFilter(); this.rollupFilter();
+      this.deadlineFilter(); this.pageSize();
+      this.currentPage.set(1);
+    }, { allowSignalWrites: true });
   }
+
+  readonly pageSize = signal(20);
+  readonly currentPage = signal(1);
+
+  readonly pagedVisible = computed(() => {
+    const start = (this.currentPage() - 1) * this.pageSize();
+    return this.visible().slice(start, start + this.pageSize());
+  });
 
   readonly confidentialityOptions: ColumnFilterOption[] =
     (['Internal', 'Public', 'Confidential'] as Confidentiality[]).map((c) => ({ value: c, label: c }));

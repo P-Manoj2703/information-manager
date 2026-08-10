@@ -7,6 +7,7 @@ import { ACKNOWLEDGEMENT_VIEW_ID, OBJECT_ID } from '@core/objects';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
 import { FilterChipsComponent, Chip } from '@shared/ui/filter-chips.component';
 import { EmptyStateComponent } from '@shared/ui/empty-state.component';
+import { PagerComponent } from '@shared/ui/pager.component';
 
 const ORDER: Record<AckStatus, number> = { Overdue: 0, Pending: 1, Done: 2, Obsolete: 3, None: 4 };
 
@@ -28,7 +29,7 @@ interface TaskRow {
 @Component({
   selector: 'im-task-list',
   standalone: true,
-  imports: [RouterLink, RecordListDirective, StatusBadgeComponent, FilterChipsComponent, EmptyStateComponent],
+  imports: [RouterLink, RecordListDirective, StatusBadgeComponent, FilterChipsComponent, EmptyStateComponent, PagerComponent],
   styleUrl: './task-list.component.scss',
   template: `
     @for (payload of payloads(); track $index) {
@@ -49,7 +50,7 @@ interface TaskRow {
       <im-filter-chips [chips]="chips()" [(value)]="filter" />
 
       <ul class="list">
-        @for (a of visible(); track a.id) {
+        @for (a of pagedVisible(); track a.id) {
           <li class="item" [class.item--overdue]="a.acknowledgment_picklist_status === 'Overdue'">
             <div class="item__body">
               <div class="item__meta">
@@ -68,6 +69,10 @@ interface TaskRow {
                           [body]="lang.isGerman() ? 'Sie haben in dieser Ansicht keine offenen Kenntnisnahmen.' : 'You have no outstanding acknowledgements in this view.'" />
         }
       </ul>
+
+      @if (visible().length) {
+        <im-pager [total]="visible().length" [(page)]="currentPage" [(pageSize)]="pageSize" />
+      }
     </section>
   `
 })
@@ -88,11 +93,16 @@ export class TaskListComponent {
   private readonly partials = signal<TaskRow[][]>([]);
   private readonly all = computed(() => this.partials().flat());
 
+  readonly pageSize = signal(20);
+  readonly currentPage = signal(1);
+
   constructor() {
     effect(() => {
       const count = this.payloads().length;
       this.partials.set(Array.from({ length: count }, () => []));
     }, { allowSignalWrites: true });
+
+    effect(() => { this.filter(); this.pageSize(); this.currentPage.set(1); }, { allowSignalWrites: true });
   }
 
   onResponse(index: number, response: RecordsResponseMeta): void {
@@ -148,6 +158,11 @@ export class TaskListComponent {
       .sort((a, b) =>
         ORDER[a.acknowledgment_picklist_status] - ORDER[b.acknowledgment_picklist_status] ||
         a.acknowledgement_date_deadline_date.localeCompare(b.acknowledgement_date_deadline_date));
+  });
+
+  readonly pagedVisible = computed(() => {
+    const start = (this.currentPage() - 1) * this.pageSize();
+    return this.visible().slice(start, start + this.pageSize());
   });
 
   due(a: TaskRow): string {
