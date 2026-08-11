@@ -24,12 +24,30 @@
   .note--error { color:#ff6b6b; }
 }
 .confirm {
-  border:0; cursor:pointer; font:inherit; font-size:15px; font-weight:600;
+  display:inline-block; border:0; cursor:pointer; font:inherit; font-size:15px; font-weight:600;
   background:var(--escriba-teal); color:var(--navy-900);
-  padding:14px 20px; border-radius:var(--radius-pill);
+  padding:14px 20px; border-radius:var(--radius-pill); text-decoration:none; text-align:center;
   transition:background 120ms ease, box-shadow 120ms ease;
   &:hover:not(:disabled) { background:#00ffe9; box-shadow:0 8px 32px rgba(11,197,181,.22); }
   &:disabled { opacity:.6; cursor:progress; }
+}
+
+.receipt-page { display:flex; justify-content:center; }
+.receipt {
+  max-width:560px; width:100%; margin:40px 0; background:#fff; border:1px solid var(--border-1);
+  border-radius:var(--radius-card); padding:44px; box-shadow:var(--shadow-xs);
+  display:flex; flex-direction:column; align-items:center; gap:18px; text-align:center;
+
+  h1 { margin:0; font-size:26px; font-weight:300; }
+  .tick { width:56px; height:56px; flex-shrink:0; border-radius:var(--radius-pill); background:var(--bg-mint);
+          color:var(--escriba-teal-deep); display:grid; place-items:center; font-size:26px; }
+  .receipt__note { margin:0; font-size:13px; color:var(--fg-3); line-height:1.6; }
+  dl { width:100%; margin:0; background:var(--bg-2); border:1px solid var(--border-1);
+       border-radius:var(--radius-input); padding:18px 20px; text-align:left;
+       display:flex; flex-direction:column; gap:10px; }
+  dl > div { display:flex; justify-content:space-between; gap:16px; font-size:13px; }
+  dt { color:var(--fg-3); }
+  dd { margin:0; font-weight:600; }
 }
 
 .doc-picker { background:#fff; border:1px solid var(--border-1); border-radius:var(--radius-card);
