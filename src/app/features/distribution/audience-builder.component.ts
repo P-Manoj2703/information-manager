@@ -542,10 +542,8 @@ export class AudienceBuilderComponent {
 
   /** Creates the real Organizational Units child record — ECAP's own server-side rule then expands the hierarchy and creates acknowledgements. */
   addOrgUnit(teamId: string, teamName: string): void {
-    console.log('DIAG addOrgUnit CLICKED — teamId:', teamId, 'teamName:', teamName);
     const folderId = this.folderId();
-    console.log('DIAG addOrgUnit — folderId:', JSON.stringify(folderId));
-    if (!folderId) { console.log('DIAG addOrgUnit: folderId is empty, returning early'); return; }
+    if (!folderId) return;
     this.orgUnitError.set('');
     const includeTeamHierarchy = this.newUnitIncludeHierarchy();
     const body = {
@@ -557,10 +555,8 @@ export class AudienceBuilderComponent {
       _gridSectionsRecords_: {},
       last_modified_timestamp: ''
     };
-    console.log('DIAG addOrgUnit request body:', JSON.stringify(body));
     this.http.post<any>(`/networking/solution/ServiceDesk/record/${OBJECT_ID.organizationalUnits}`, body, { params: { _uiVersion: 3 } }).subscribe({
-      next: (response) => {
-        console.log('DIAG addOrgUnit response:', JSON.stringify(response));
+      next: () => {
         // Re-fetch rather than optimistically appending: when includeTeamHierarchy is on,
         // ECAP's server-side rule creates one additional Organizational Units row per
         // descendant team — those only become visible by reading them back from ECAP.
@@ -569,7 +565,7 @@ export class AudienceBuilderComponent {
         this.newUnitIncludeHierarchy.set(false);
       },
       error: (err) => {
-        console.error('DIAG Organizational unit create failed', err, JSON.stringify(err.error));
+        console.error('Organizational unit create failed', err);
         this.orgUnitError.set(this.lang.isGerman() ? 'Hinzufügen fehlgeschlagen.' : 'Add failed.');
       }
     });
@@ -659,10 +655,8 @@ export class AudienceBuilderComponent {
    * triggers the copy, reading whatever is currently saved on the field.
    */
   applyTemplate(templateId: string): void {
-    console.log('DIAG applyTemplate CLICKED — templateId:', templateId);
     const folderId = this.folderId();
-    console.log('DIAG applyTemplate — folderId:', JSON.stringify(folderId));
-    if (!folderId) { console.log('DIAG applyTemplate: folderId is empty, returning early'); return; }
+    if (!folderId) return;
     this.templateError.set('');
     this.templateApplying.set(true);
 

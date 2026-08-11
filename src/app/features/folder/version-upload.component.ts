@@ -232,7 +232,7 @@ export class VersionUploadComponent {
     this.folderActivating.set(true);
     this.folderActivateError.set('');
     this.http.post<any>(
-      `${API_BASE}/record/${OBJECT_ID.informationFolder}/${this.folderId()}/execMacro/${INFORMATION_FOLDER_ACTIVATE_MACRO_ID}`, {}
+      `${API_BASE}/record/${OBJECT_ID.informationFolder}/${this.folderId()}/execMacro/${INFORMATION_FOLDER_ACTIVATE_MACRO_ID}`, { params: {} }
     ).subscribe({
       next: () => { this.folderActivating.set(false); this.folderActivated.set(true); },
       error: (err) => {

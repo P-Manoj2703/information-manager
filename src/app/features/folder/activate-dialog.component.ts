@@ -13,11 +13,14 @@ import { API_BASE, DOCUMENT_VERSION_ACTIVATE_MACRO_ID, OBJECT_ID } from '@core/o
  * POST rest/record/{objectId}/{recordId}/execMacro/{macroId}, a different URL
  * shape than Information Folder's Activate/Deactivate (those go through
  * rest/macro/{slug}/{recordId} instead — the two object types use different
- * macro-invocation conventions in this tenant). That macro only flips
- * version_picklist_version_status to 'Active'; the acknowledgement rows it
- * triggers server-side (VersionUtil.syncAcknowledgementsForFolderActiveVersion)
- * are counted with a follow-up read rather than trusted from the macro's own
- * response, since the macro call itself returns no such count.
+ * macro-invocation conventions in this tenant). The body must be
+ * `{ params: {} }`, not a bare `{}` — confirmed live that a bare `{}` still
+ * gets a 200 back but silently no-ops server-side (version_picklist_version_status
+ * never actually flips), while the native button's `{"params":{}}` body is what
+ * makes the macro really run. The acknowledgement rows it triggers server-side
+ * (VersionUtil.syncAcknowledgementsForFolderActiveVersion) are counted with a
+ * follow-up read rather than trusted from the macro's own response, since the
+ * macro call itself returns no such count.
  */
 @Component({
   selector: 'im-activate-dialog',
@@ -88,7 +91,7 @@ export class ActivateDialogComponent {
     this.activateError.set('');
 
     this.http.post<any>(
-      `${API_BASE}/record/${OBJECT_ID.documentVersion}/${versionId}/execMacro/${DOCUMENT_VERSION_ACTIVATE_MACRO_ID}`, {}
+      `${API_BASE}/record/${OBJECT_ID.documentVersion}/${versionId}/execMacro/${DOCUMENT_VERSION_ACTIVATE_MACRO_ID}`, { params: {} }
     ).pipe(
       // catchError only guards the count read — a failure here must NOT be treated as
       // "0 acknowledgements found" success; it must still surface as a real activation

@@ -42,7 +42,10 @@
   &__main { display:flex; align-items:center; gap:12px; }
   &__name { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px;
     strong { font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    small { font-size:11px; color:var(--fg-3); } } }
+    small { font-size:11px; color:var(--fg-3); } }
+  &--pending { background:var(--bg-mint); }
+}
+.pending-label { font-size:11px; color:var(--escriba-teal-700); font-weight:600; }
 
 .tree { list-style:none; margin:10px 0 0; padding:8px 0 0 16px; border-top:1px dashed var(--border-1);
         display:flex; flex-direction:column; gap:6px;
@@ -79,11 +82,14 @@
 .person { display:flex; align-items:center; gap:12px; padding:11px 16px; border-bottom:1px solid var(--border-1);
   &__id { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
   &__name { font-size:13px; font-weight:600; }
-  &__team { font-size:11px; color:var(--fg-3); } }
+  &__team { font-size:11px; color:var(--fg-3); }
+  &--pending { background:var(--bg-mint); }
+}
 
 footer { display:flex; justify-content:flex-end; align-items:center; gap:12px; padding-top:8px; border-top:1px solid var(--border-1); }
 .ghost { border:1px solid var(--border-2); background:#fff; color:var(--fg-2); cursor:pointer;
-         font:inherit; font-size:14px; font-weight:600; padding:11px 20px; border-radius:var(--radius-pill); }
+         font:inherit; font-size:14px; font-weight:600; padding:11px 20px; border-radius:var(--radius-pill);
+         &:disabled { opacity:.5; cursor:not-allowed; } }
 .primary { border:0; cursor:pointer; font:inherit; font-size:14px; font-weight:600;
            background:var(--escriba-teal); color:var(--navy-900); padding:12px 22px; border-radius:var(--radius-pill);
            &:disabled { opacity:.5; cursor:not-allowed; } }

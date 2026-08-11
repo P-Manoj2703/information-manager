@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { catchError, map, of, switchMap } from 'rxjs';
 import { RouterLink } from '@angular/router';
@@ -44,9 +44,8 @@ import { ActivateDialogComponent } from './activate-dialog.component';
       </ng-container>
     }
 
-    @switch (step()) {
-      @case (1) {
-        <form class="card" [formGroup]="form" (ngSubmit)="saveDraft()">
+    @if (visitedSteps().has(1)) {
+        <form class="card" [style.display]="step() === 1 ? null : 'none'" [formGroup]="form" (ngSubmit)="saveDraft()">
           <h2>{{ lang.isGerman() ? 'Metadaten' : 'Metadata' }}</h2>
 
           @if (createError()) {
@@ -107,16 +106,17 @@ import { ActivateDialogComponent } from './activate-dialog.component';
             <button class="primary" [disabled]="form.invalid || busy()">{{ lang.isGerman() ? 'Speichern und weiter' : 'Save and continue' }}</button>
           </footer>
         </form>
-      }
-      @case (2) { <im-audience-builder [folderId]="folderId()" (continue)="onAudienceContinue($event)" /> }
-      @case (3) {
-        <im-version-upload [folderId]="folderId()" [folderName]="form.value.information_folder_textfield_name ?? ''"
-                            (continue)="onVersionSaved($event)" />
-      }
-      @case (4) {
-        <im-activate-dialog [folderId]="folderId()" [versionId]="versionRecordId()" [teamCount]="teamCount()" [userCount]="userCount()"
-                            [supersedes]="null" [deadlineDays]="form.value.information_folder_number_deadlinedays ?? 14" />
-      }
+    }
+    @if (visitedSteps().has(2)) {
+      <im-audience-builder [style.display]="step() === 2 ? null : 'none'" [folderId]="folderId()" (continue)="onAudienceContinue($event)" />
+    }
+    @if (visitedSteps().has(3)) {
+      <im-version-upload [style.display]="step() === 3 ? null : 'none'" [folderId]="folderId()" [folderName]="form.value.information_folder_textfield_name ?? ''"
+                          (continue)="onVersionSaved($event)" />
+    }
+    @if (visitedSteps().has(4)) {
+      <im-activate-dialog [style.display]="step() === 4 ? null : 'none'" [folderId]="folderId()" [versionId]="versionRecordId()" [teamCount]="teamCount()" [userCount]="userCount()"
+                          [supersedes]="null" [deadlineDays]="form.value.information_folder_number_deadlinedays ?? 14" />
     }
   `
 })
@@ -130,6 +130,24 @@ export class FolderWizardComponent {
 
   readonly step = signal(1);
   readonly folderId = signal('');
+
+  /**
+   * Each step component mounts once, the first time its step is reached, and then stays alive
+   * (just hidden, never destroyed) for the rest of the wizard's lifetime — confirmed live that
+   * @switch's normal destroy/recreate behavior wiped VersionUploadComponent's local draft state
+   * (typed fields, queued files not yet saved) the moment the user navigated to a different
+   * step and back, even though nothing was actually lost server-side (nothing had been saved
+   * yet). Real per-row persistence (Audience's team/user adds, an already-saved Document
+   * Version) isn't at risk either way, since that lives in ECAP, not this component tree.
+   */
+  readonly visitedSteps = signal<Set<number>>(new Set([1]));
+
+  constructor() {
+    effect(() => {
+      const s = this.step();
+      this.visitedSteps.update((set) => set.has(s) ? set : new Set([...set, s]));
+    }, { allowSignalWrites: true });
+  }
 
   /** Steps past 1 need the real folder record to exist first — confirmed live that clicking straight to "Audience" before that left folderId empty, silently no-oping every add action with zero visible error. */
   goToStep(n: number): void {

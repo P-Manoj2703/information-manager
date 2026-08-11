@@ -209,7 +209,7 @@ export class VersionDetailComponent {
     this.activating.set(true);
     this.activateError.set('');
     this.http.post<any>(
-      `${API_BASE}/record/${OBJECT_ID.documentVersion}/${versionId}/execMacro/${DOCUMENT_VERSION_ACTIVATE_MACRO_ID}`, {}
+      `${API_BASE}/record/${OBJECT_ID.documentVersion}/${versionId}/execMacro/${DOCUMENT_VERSION_ACTIVATE_MACRO_ID}`, { params: {} }
     ).subscribe({
       next: () => {
         this.activating.set(false);

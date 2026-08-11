@@ -87,7 +87,6 @@ export class TemplatePickerComponent {
   });
 
   pick(id: string): void {
-    console.log('DIAG template-picker pick() CLICKED — id:', id);
     this.apply.emit(id);
     this.query.set('');
   }

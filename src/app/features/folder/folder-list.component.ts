@@ -65,7 +65,7 @@ import { PagerComponent } from '@shared/ui/pager.component';
     </div>
 
     <div class="bar">
-      <im-filter-chips [chips]="chips()" [(value)]="view" />
+      <im-filter-chips [chips]="chips()" [value]="view()" (valueChange)="selectView($event)" />
       <span class="spacer"></span>
       @if (session.canCreateFolder()) {
         <a class="new" routerLink="/folders/new">{{ lang.isGerman() ? 'Neuer Informationsordner' : 'New information folder' }}</a>
@@ -188,6 +188,19 @@ export class FolderListComponent {
       this.pageSize();
       this.currentPage.set(1);
     }, { allowSignalWrites: true });
+  }
+
+  /**
+   * The chip bar's own click handler — deliberately separate from the query-param effect
+   * above, which also writes `view` (paired with a rollup filter) when arriving from Estate
+   * Overview's status buckets. Only a real manual tab switch should clear the column filters;
+   * clearing them on every `view` write would immediately wipe that intentional deep-link filter.
+   */
+  selectView(id: string): void {
+    this.confidentialityFilter.set([]);
+    this.statusFilter.set([]);
+    this.rollupFilter.set([]);
+    this.view.set(this.view() === id ? 'all' : id);
   }
 
   readonly pageSize = signal(20);
@@ -359,7 +372,7 @@ export class FolderListComponent {
     this.busy.set(folderId);
     this.actionError.set(null);
     this.http.post<any>(
-      `${API_BASE}/record/${OBJECT_ID.informationFolder}/${folderId}/execMacro/${INFORMATION_FOLDER_DEACTIVATE_MACRO_ID}`, {}
+      `${API_BASE}/record/${OBJECT_ID.informationFolder}/${folderId}/execMacro/${INFORMATION_FOLDER_DEACTIVATE_MACRO_ID}`, { params: {} }
     ).subscribe({
       next: () => { this.busy.set(null); this.refreshTick.update((n) => n + 1); },
       error: (err: HttpErrorResponse) => {
@@ -377,7 +390,7 @@ export class FolderListComponent {
     this.busy.set(folderId);
     this.actionError.set(null);
     this.http.post<any>(
-      `${API_BASE}/record/${OBJECT_ID.informationFolder}/${folderId}/execMacro/${INFORMATION_FOLDER_ACTIVATE_MACRO_ID}`, {}
+      `${API_BASE}/record/${OBJECT_ID.informationFolder}/${folderId}/execMacro/${INFORMATION_FOLDER_ACTIVATE_MACRO_ID}`, { params: {} }
     ).subscribe({
       next: () => { this.busy.set(null); this.refreshTick.update((n) => n + 1); },
       error: (err: HttpErrorResponse) => {

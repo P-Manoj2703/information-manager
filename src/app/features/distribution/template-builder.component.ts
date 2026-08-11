@@ -18,6 +18,10 @@ interface LinkedTeam {
 }
 interface LinkedUser { recordId: string; userId: string; userLabel: string; }
 
+/** Picked but not yet POSTed — only becomes a real Distribution_List_Teams/Users row on Save. */
+interface PendingTeam { teamId: string; teamName: string; includeTeamHierarchy: boolean; }
+interface PendingUser { userId: string; userLabel: string; }
+
 /** Distribution_List_Teams / Distribution_List_Users checkboxes round-trip as "1"/"0" — same convention confirmed on Organizational_Units. */
 function isCheckboxActive(val: unknown): boolean {
   if (val == null) return false;
@@ -44,11 +48,15 @@ const DISTRIBUTION_LIST_LAYOUT_ID = 'cb599bfbc9dd4071b81f31afd10663ca';
  *
  * The template record has to exist before either junction object can reference it, so unlike
  * the original mock (single "Save" at the end), this saves the name/description first — same
- * two-phase shape already proven for Information Folder and Document Version — and each
- * team/user add below that is an immediate, real create, mirroring AudienceBuilderComponent.
- * Dropped from the mock: the "resolved members with provenance" preview (who's included
- * directly vs. via a team vs. via hierarchy) — ECAP's own Distribution Template screen has no
- * such preview, it just lists the linked teams/users directly.
+ * two-phase shape already proven for Information Folder and Document Version.
+ *
+ * Picking a team/user from the "+ Add" picker only stages it locally (pendingTeams/pendingUsers)
+ * — nothing is created in ECAP until Save is clicked, and Cancel discards the staged picks with
+ * no network calls, leaving the template exactly as it was. Removing an already-saved row (the
+ * "×" on an existing team/user) stays immediate, same as elsewhere in this app — only new adds
+ * are staged. Dropped from the mock: the "resolved members with provenance" preview (who's
+ * included directly vs. via a team vs. via hierarchy) — ECAP's own Distribution Template screen
+ * has no such preview, it just lists the linked teams/users directly.
  */
 @Component({
   selector: 'im-template-builder',
@@ -154,6 +162,23 @@ const DISTRIBUTION_LIST_LAYOUT_ID = 'cb599bfbc9dd4071b81f31afd10663ca';
               </div>
             }
 
+            @for (t of pendingTeams(); track t.teamId) {
+              <div class="row row--pending">
+                <div class="row__main">
+                  <div class="row__name">
+                    <strong>{{ t.teamName }}</strong>
+                    <small class="pending-label">
+                      {{ lang.isGerman() ? 'Nicht gespeichert' : 'Not saved yet' }}
+                      @if (t.includeTeamHierarchy) {
+                        · {{ lang.isGerman() ? 'inkl. Hierarchie' : 'incl. hierarchy' }}
+                      }
+                    </small>
+                  </div>
+                  <button type="button" class="x" (click)="unstageTeam(t.teamId)" aria-label="remove">×</button>
+                </div>
+              </div>
+            }
+
             @if (showTeamPicker()) {
               <div class="picker">
                 <input type="text" class="lookup__input" [value]="teamQuery()"
@@ -170,7 +195,7 @@ const DISTRIBUTION_LIST_LAYOUT_ID = 'cb599bfbc9dd4071b81f31afd10663ca';
                 }
                 <div class="add">
                   @for (t of addableTeams(); track t.id) {
-                    <button type="button" (click)="addTeam(t.id, t.name)">+ {{ t.name }}</button>
+                    <button type="button" (click)="stageTeam(t.id, t.name)">+ {{ t.name }}</button>
                   } @empty {
                     @if (!teamsLoading() && teamQuery().trim()) {
                       <span class="lookup__empty">{{ lang.isGerman() ? 'Keine Teams gefunden' : 'No teams found' }}</span>
@@ -200,7 +225,7 @@ const DISTRIBUTION_LIST_LAYOUT_ID = 'cb599bfbc9dd4071b81f31afd10663ca';
                 }
                 <div class="lookup__results">
                   @for (u of addableUsers(); track u.id) {
-                    <button type="button" (click)="addUser(u.id, u.label)">+ {{ u.label }}</button>
+                    <button type="button" (click)="stageUser(u.id, u.label)">+ {{ u.label }}</button>
                   } @empty {
                     @if (!usersLoading() && userQuery().trim()) {
                       <span class="lookup__empty">{{ lang.isGerman() ? 'Keine Treffer' : 'No matches' }}</span>
@@ -219,12 +244,31 @@ const DISTRIBUTION_LIST_LAYOUT_ID = 'cb599bfbc9dd4071b81f31afd10663ca';
                   <button type="button" class="x" (click)="removeUser(u.recordId)" aria-label="remove">×</button>
                 </div>
               }
+              @for (u of pendingUsers(); track u.userId) {
+                <div class="person person--pending">
+                  <div class="person__id">
+                    <span class="person__name">{{ u.userLabel }}</span>
+                    <span class="pending-label">{{ lang.isGerman() ? 'Nicht gespeichert' : 'Not saved yet' }}</span>
+                  </div>
+                  <button type="button" class="x" (click)="unstageUser(u.userId)" aria-label="remove">×</button>
+                </div>
+              }
             </div>
           </div>
         </div>
 
+        @if (saveError()) { <p class="error">{{ saveError() }}</p> }
         <footer>
-          <a class="primary" routerLink="/templates">{{ lang.isGerman() ? 'Fertig' : 'Done' }}</a>
+          @if (hasPendingChanges()) {
+            <button type="button" class="ghost" [disabled]="saving()" (click)="cancelChanges()">
+              {{ lang.isGerman() ? 'Abbrechen' : 'Cancel' }}
+            </button>
+            <button type="button" class="primary" [disabled]="saving()" (click)="saveChanges()">
+              {{ saving() ? (lang.isGerman() ? 'Wird gespeichert…' : 'Saving…') : (lang.isGerman() ? 'Speichern' : 'Save') }}
+            </button>
+          } @else {
+            <a class="primary" routerLink="/templates">{{ lang.isGerman() ? 'Fertig' : 'Done' }}</a>
+          }
         </footer>
       }
     </section>
@@ -316,6 +360,12 @@ export class TemplateBuilderComponent {
   readonly userError = signal('');
   readonly teamsLoading = signal(true);
   readonly usersLoading = signal(true);
+
+  readonly pendingTeams = signal<PendingTeam[]>([]);
+  readonly pendingUsers = signal<PendingUser[]>([]);
+  readonly hasPendingChanges = computed(() => this.pendingTeams().length > 0 || this.pendingUsers().length > 0);
+  readonly saving = signal(false);
+  readonly saveError = signal('');
 
   private static readonly PAGE_SIZE = 20;
   private static readonly MAX_PAGES = 8;
@@ -426,17 +476,17 @@ export class TemplateBuilderComponent {
 
   readonly addableTeams = computed(() => {
     const q = this.teamQuery().trim().toLowerCase();
-    const linkedIds = new Set(this.linkedTeams().map((t) => t.teamId));
+    const excludedIds = new Set([...this.linkedTeams().map((t) => t.teamId), ...this.pendingTeams().map((t) => t.teamId)]);
     return this.teams()
-      .filter((t) => !linkedIds.has(t.id))
+      .filter((t) => !excludedIds.has(t.id))
       .filter((t) => !q || t.name.toLowerCase().includes(q));
   });
 
   readonly addableUsers = computed(() => {
     const q = this.userQuery().trim().toLowerCase();
-    const linkedIds = new Set(this.linkedUsers().map((u) => u.userId));
+    const excludedIds = new Set([...this.linkedUsers().map((u) => u.userId), ...this.pendingUsers().map((u) => u.userId)]);
     return this.users()
-      .filter((u) => !linkedIds.has(u.id))
+      .filter((u) => !excludedIds.has(u.id))
       .filter((u) => !q || u.label.toLowerCase().includes(q));
   });
 
@@ -528,30 +578,14 @@ export class TemplateBuilderComponent {
     });
   }
 
-  addTeam(teamId: string, teamName: string): void {
-    const templateId = this.templateId();
-    if (!templateId) return;
-    this.teamError.set('');
-    const includeTeamHierarchy = this.newTeamIncludeHierarchy();
-    this.http.post<any>(`/networking/solution/ServiceDesk/record/${DISTRIBUTION_LIST_TEAMS_OBJECT}`, {
-      distributionlist_record: templateId,
-      teams_record: teamId,
-      distribution_list_teams_cb_include_team_hierarchy: includeTeamHierarchy ? '1' : '0',
-      layout_id: DISTRIBUTION_LIST_TEAMS_LAYOUT_ID,
-      _request_id: crypto.randomUUID(),
-      _gridSectionsRecords_: {},
-      last_modified_timestamp: ''
-    }, { params: { _uiVersion: 3 } }).subscribe({
-      next: () => {
-        this.loadLinkedTeams(templateId);
-        this.teamQuery.set('');
-        this.newTeamIncludeHierarchy.set(false);
-      },
-      error: (err) => {
-        console.error('Add team failed', err);
-        this.teamError.set(this.lang.isGerman() ? 'Hinzufügen fehlgeschlagen.' : 'Add failed.');
-      }
-    });
+  stageTeam(teamId: string, teamName: string): void {
+    this.pendingTeams.update((list) => [...list, { teamId, teamName, includeTeamHierarchy: this.newTeamIncludeHierarchy() }]);
+    this.teamQuery.set('');
+    this.newTeamIncludeHierarchy.set(false);
+  }
+
+  unstageTeam(teamId: string): void {
+    this.pendingTeams.update((list) => list.filter((t) => t.teamId !== teamId));
   }
 
   removeTeam(recordId: string): void {
@@ -582,28 +616,13 @@ export class TemplateBuilderComponent {
     ).subscribe((users) => this.linkedUsers.set(users));
   }
 
-  addUser(userId: string, userLabel: string): void {
-    const templateId = this.templateId();
-    if (!templateId) return;
-    this.userError.set('');
-    this.http.post<any>(`/networking/solution/ServiceDesk/record/${DISTRIBUTION_LIST_USERS_OBJECT}`, {
-      distributionlist_record: templateId,
-      users_record: userId,
-      layout_id: DISTRIBUTION_LIST_USERS_LAYOUT_ID,
-      _request_id: crypto.randomUUID(),
-      _gridSectionsRecords_: {},
-      last_modified_timestamp: ''
-    }, { params: { _uiVersion: 3 } }).subscribe({
-      next: (response) => {
-        const recordId = String(response?.record?.id ?? response?.id ?? '');
-        this.linkedUsers.update((users) => [...users, { recordId, userId, userLabel }]);
-        this.userQuery.set('');
-      },
-      error: (err) => {
-        console.error('Add user failed', err);
-        this.userError.set(this.lang.isGerman() ? 'Hinzufügen fehlgeschlagen.' : 'Add failed.');
-      }
-    });
+  stageUser(userId: string, userLabel: string): void {
+    this.pendingUsers.update((list) => [...list, { userId, userLabel }]);
+    this.userQuery.set('');
+  }
+
+  unstageUser(userId: string): void {
+    this.pendingUsers.update((list) => list.filter((u) => u.userId !== userId));
   }
 
   removeUser(recordId: string): void {
@@ -613,6 +632,65 @@ export class TemplateBuilderComponent {
         console.error('Remove user failed', err);
         this.userError.set(this.lang.isGerman() ? 'Entfernen fehlgeschlagen.' : 'Remove failed.');
       }
+    });
+  }
+
+  /** Discards every staged pick with no network calls — the template is left exactly as it was before picking. */
+  cancelChanges(): void {
+    this.pendingTeams.set([]);
+    this.pendingUsers.set([]);
+    this.showTeamPicker.set(false);
+    this.showUserPicker.set(false);
+    this.teamQuery.set('');
+    this.userQuery.set('');
+    this.newTeamIncludeHierarchy.set(false);
+  }
+
+  /** Commits every staged pick as a real create, same request shape the old immediate-add methods used. */
+  saveChanges(): void {
+    const templateId = this.templateId();
+    if (!templateId || this.saving()) return;
+    this.saving.set(true);
+    this.saveError.set('');
+
+    const teamRequests = this.pendingTeams().map((t) =>
+      this.http.post<any>(`/networking/solution/ServiceDesk/record/${DISTRIBUTION_LIST_TEAMS_OBJECT}`, {
+        distributionlist_record: templateId,
+        teams_record: t.teamId,
+        distribution_list_teams_cb_include_team_hierarchy: t.includeTeamHierarchy ? '1' : '0',
+        layout_id: DISTRIBUTION_LIST_TEAMS_LAYOUT_ID,
+        _request_id: crypto.randomUUID(),
+        _gridSectionsRecords_: {},
+        last_modified_timestamp: ''
+      }, { params: { _uiVersion: 3 } }).pipe(
+        map(() => true),
+        catchError((err) => { console.error('Add team failed', t.teamName, err); return of(false); })
+      )
+    );
+    const userRequests = this.pendingUsers().map((u) =>
+      this.http.post<any>(`/networking/solution/ServiceDesk/record/${DISTRIBUTION_LIST_USERS_OBJECT}`, {
+        distributionlist_record: templateId,
+        users_record: u.userId,
+        layout_id: DISTRIBUTION_LIST_USERS_LAYOUT_ID,
+        _request_id: crypto.randomUUID(),
+        _gridSectionsRecords_: {},
+        last_modified_timestamp: ''
+      }, { params: { _uiVersion: 3 } }).pipe(
+        map(() => true),
+        catchError((err) => { console.error('Add user failed', u.userLabel, err); return of(false); })
+      )
+    );
+
+    const requests = [...teamRequests, ...userRequests];
+    (requests.length ? forkJoin(requests) : of([])).subscribe((results) => {
+      this.saving.set(false);
+      this.pendingTeams.set([]);
+      this.pendingUsers.set([]);
+      if (!results.every(Boolean)) {
+        this.saveError.set(this.lang.isGerman() ? 'Einige Änderungen konnten nicht gespeichert werden.' : 'Some changes could not be saved.');
+      }
+      this.loadLinkedTeams(templateId);
+      this.loadLinkedUsers(templateId);
     });
   }
 }
