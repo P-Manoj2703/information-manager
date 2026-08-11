@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { catchError, map, of, switchMap } from 'rxjs';
 import { RouterLink } from '@angular/router';
@@ -27,7 +27,8 @@ import { ActivateDialogComponent } from './activate-dialog.component';
 
     <ol class="rail">
       @for (s of steps; track s.n) {
-        <li class="rail__step" [class.on]="step() === s.n" [class.past]="step() > s.n" (click)="step.set(s.n)">
+        <li class="rail__step" [class.on]="step() === s.n" [class.past]="step() > s.n"
+            [class.disabled]="s.n > 1 && !folderId()" (click)="goToStep(s.n)">
           <span class="rail__num">{{ s.n }}</span>
           <span>{{ lang.isGerman() ? s.de : s.en }}</span>
         </li>
@@ -80,6 +81,7 @@ import { ActivateDialogComponent } from './activate-dialog.component';
             </label>
             <label>{{ lang.isGerman() ? 'Verantwortliches Team' : 'Responsible team' }} *
               <select formControlName="information_folder_lookup_responsible_team" required>
+                <option value="" disabled>{{ lang.isGerman() ? 'Bitte wählen' : 'Select a team' }}</option>
                 @for (t of myTeams(); track t.recordId) {
                   <option [value]="t.recordId">{{ t.teamName }}</option>
                 }
@@ -128,6 +130,13 @@ export class FolderWizardComponent {
 
   readonly step = signal(1);
   readonly folderId = signal('');
+
+  /** Steps past 1 need the real folder record to exist first — confirmed live that clicking straight to "Audience" before that left folderId empty, silently no-oping every add action with zero visible error. */
+  goToStep(n: number): void {
+    if (n > 1 && !this.folderId()) return;
+    this.step.set(n);
+  }
+
   readonly versionRecordId = signal('');
   readonly teamCount = signal(0);
   readonly userCount = signal(0);
@@ -211,16 +220,6 @@ export class FolderWizardComponent {
     information_folder_multi_select_picklist_document_language: this.fb.nonNullable.control<string[]>([]),
     information_folder_richtext_area_user_information: ['', Validators.required]
   });
-
-  /** Defaults the selection once the real fetch resolves — "My Team" if the user belongs to it, else the first real team. */
-  constructor() {
-    effect(() => {
-      const teams = this.myTeams();
-      if (!teams.length || this.form.controls.information_folder_lookup_responsible_team.value) return;
-      const mine = teams.find((t) => t.teamName === 'My Team') ?? teams[0];
-      this.form.controls.information_folder_lookup_responsible_team.setValue(mine.recordId);
-    }, { allowSignalWrites: true });
-  }
 
   saveDraft(): void {
     if (this.form.invalid || this.busy()) return;

@@ -4,10 +4,12 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { RecordListDirective, RecordsPayloadMeta, RecordsResponseMeta } from '@escriba/cui-ecap-runtime';
 import { AckStatus, Confidentiality, FolderStatus, InformationFolder } from '@core/models';
-import { API_BASE, INFORMATION_FOLDER_ACTIVATE_MACRO_ID, INFORMATION_FOLDER_DEACTIVATE_MACRO_ID, INFORMATION_FOLDER_VIEW_ID, OBJECT_ID } from '@core/objects';
+import { completion } from '@core/rollup';
+import { ACKNOWLEDGEMENT_VIEW_ID, API_BASE, INFORMATION_FOLDER_ACTIVATE_MACRO_ID, INFORMATION_FOLDER_DEACTIVATE_MACRO_ID, INFORMATION_FOLDER_VIEW_ID, OBJECT_ID } from '@core/objects';
 import { SessionService } from '@core/services/session.service';
 import { LanguageService } from '@core/i18n/language.service';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
+import { CompletionBarComponent } from '@shared/ui/completion-bar.component';
 import { FilterChipsComponent, Chip } from '@shared/ui/filter-chips.component';
 import { EmptyStateComponent } from '@shared/ui/empty-state.component';
 import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-filter.component';
@@ -17,8 +19,11 @@ import { PagerComponent } from '@shared/ui/pager.component';
 @Component({
   selector: 'im-folder-list',
   standalone: true,
-  imports: [RouterLink, RecordListDirective, StatusBadgeComponent, FilterChipsComponent, EmptyStateComponent, ColumnFilterComponent, PagerComponent],
+  imports: [RouterLink, RecordListDirective, StatusBadgeComponent, CompletionBarComponent, FilterChipsComponent, EmptyStateComponent, ColumnFilterComponent, PagerComponent],
   styles: [`
+    .header { margin-bottom: 22px; }
+    .header h1 { margin: 0; font-size: 22px; font-weight: 700; }
+    .header .subtitle { margin: 4px 0 0; font-size: 13px; color: var(--fg-3); }
     .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
     .bar .spacer { margin-left: auto; }
     .new { background: var(--escriba-teal); color: var(--navy-900); padding: 11px 20px;
@@ -29,6 +34,10 @@ import { PagerComponent } from '@shared/ui/pager.component';
          background: var(--bg-2); padding: 12px 20px; white-space: nowrap; position: relative; }
     td { padding: 18px 20px; border-top: 1px solid var(--border-1); font-size: 14px; vertical-align: top; }
     .name { font-weight: 600; } .sub { font-size: 12px; color: var(--fg-3); margin-top: 4px; }
+    .pill { display: inline-flex; align-items: center; border-radius: var(--radius-pill); padding: 3px 10px;
+            font-size: 12px; font-weight: 600; white-space: nowrap; background: var(--bg-mint); color: var(--escriba-teal-700); }
+    .rollup { display: flex; flex-direction: column; gap: 6px; min-width: 140px; }
+    .rollup .rollup__top { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--fg-2); }
     .actions { text-align: right; }
     .deactivate { border:1px solid var(--border-2); background:#fff; color:var(--fg-2); cursor:pointer;
                   font:inherit; font-size:12px; font-weight:600; padding:7px 14px; border-radius:var(--radius-pill);
@@ -46,6 +55,14 @@ import { PagerComponent } from '@shared/ui/pager.component';
         (apiErrorEvent)="onFoldersError($index, $event)">
       </ng-container>
     }
+    <ng-container [libEcapRuntimeRecordList]="ackPayload()"
+      (apiResponseEvent)="onAcksResponse($event)" (apiErrorEvent)="onAcksError($event)">
+    </ng-container>
+
+    <div class="header">
+      <h1>{{ lang.isGerman() ? 'Informationsordner' : 'Information folders' }}</h1>
+      <p class="subtitle">{{ lang.isGerman() ? 'Eigene und Team-Ordner' : 'Own and team folders' }}</p>
+    </div>
 
     <div class="bar">
       <im-filter-chips [chips]="chips()" [(value)]="view" />
@@ -58,6 +75,7 @@ import { PagerComponent } from '@shared/ui/pager.component';
     <table>
       <thead><tr>
         <th>{{ lang.t('folders') }}</th>
+        <th>{{ lang.isGerman() ? 'Verantwortliches Team' : 'Responsible Team' }}</th>
         <th>
           <im-column-filter [title]="lang.isGerman() ? 'Vertraulichkeit' : 'Confidentiality'"
                              [options]="confidentialityOptions" [(selected)]="confidentialityFilter">
@@ -70,14 +88,9 @@ import { PagerComponent } from '@shared/ui/pager.component';
           </im-column-filter>
         </th>
         <th>
-          <im-column-filter [title]="lang.isGerman() ? 'Kenntnisnahme-Status' : 'Roll-up'"
+          <im-column-filter [title]="lang.isGerman() ? 'Kenntnisnahme-Rollup' : 'Acknowledgement roll-up'"
                              [options]="rollupOptions()" [(selected)]="rollupFilter">
-            {{ lang.isGerman() ? 'Kenntnisnahme-Status' : 'Roll-up' }}
-          </im-column-filter>
-        </th>
-        <th>
-          <im-column-filter [title]="lang.t('deadline')" [options]="deadlineOptions()" [(selected)]="deadlineFilter">
-            {{ lang.t('deadline') }}
+            {{ lang.isGerman() ? 'Kenntnisnahme-Rollup' : 'Acknowledgement roll-up' }}
           </im-column-filter>
         </th>
         <th></th>
@@ -89,10 +102,22 @@ import { PagerComponent } from '@shared/ui/pager.component';
               <a class="name" [routerLink]="['/folders', f.id]">{{ f.information_folder_textfield_name }}</a>
               <div class="sub">{{ f.information_folder_textfield_short_name }}</div>
             </td>
-            <td>{{ f.information_folder_picklist_confidentiality_level }}</td>
+            <td>{{ f.responsibleTeamName || '—' }}</td>
+            <td>
+              @if (f.information_folder_picklist_confidentiality_level) {
+                <span class="pill">{{ f.information_folder_picklist_confidentiality_level }}</span>
+              }
+            </td>
             <td><im-status-badge [status]="f.information_folder_picklist_status" /></td>
-            <td><im-status-badge [status]="f.information_folder_picklist_acknowledgment_status" /></td>
-            <td>{{ f.information_folder_number_deadlinedays }} {{ lang.isGerman() ? 'Tage' : 'days' }}</td>
+            <td>
+              <div class="rollup">
+                <div class="rollup__top">
+                  <im-status-badge [status]="f.information_folder_picklist_acknowledgment_status" />
+                  <span>{{ stats(f.information_folder_textfield_name).pct }}%</span>
+                </div>
+                <im-completion-bar [data]="stats(f.information_folder_textfield_name)" [showLegend]="false" />
+              </div>
+            </td>
             <td class="actions">
               @if (session.canCreateFolder()) {
                 @if (f.information_folder_picklist_status === 'Active') {
@@ -135,7 +160,6 @@ export class FolderListComponent {
   readonly confidentialityFilter = signal<string[]>([]);
   readonly statusFilter = signal<string[]>([]);
   readonly rollupFilter = signal<string[]>([]);
-  readonly deadlineFilter = signal<string[]>([]);
 
   /**
    * Arriving from Estate Overview's status buckets: ?view=all&rollup=Pending pre-selects the
@@ -155,13 +179,13 @@ export class FolderListComponent {
     effect(() => {
       const count = this.payloads().length;
       this.folderPartials.set(Array.from({ length: count }, () => []));
-    });
+    }, { allowSignalWrites: true });
 
     // Any change that could shrink or reorder the visible set should land back on page 1 —
     // otherwise switching tabs/filters can leave the pager stuck past the new last page.
     effect(() => {
       this.view(); this.confidentialityFilter(); this.statusFilter(); this.rollupFilter();
-      this.deadlineFilter(); this.pageSize();
+      this.pageSize();
       this.currentPage.set(1);
     }, { allowSignalWrites: true });
   }
@@ -261,8 +285,9 @@ export class FolderListComponent {
       information_folder_picklist_acknowledgment_status: raw.information_folder_picklist_acknowledgment_status,
       information_folder_picklist_processing_status: raw.information_folder_picklist_processing_status,
       information_folder_number_deadlinedays: raw.information_folder_number_deadlinedays,
-      // Also a Lookup field — same {id, name} shape as created_id/modified_id.
+      // Confirmed live (selectedColumnsList labels this field "Responsible Team"): same {name, id} shape as created_id/modified_id.
       information_folder_lookup_responsible_team: raw.information_folder_lookup_responsible_team?.id ?? raw.information_folder_lookup_responsible_team,
+      responsibleTeamName: raw.information_folder_lookup_responsible_team?.name ?? '',
       information_folder_lu_distribution_list: raw.information_folder_lu_distribution_list,
       information_folder_text_field_userid: raw.information_folder_text_field_userid,
       information_folder_text_field_primary_team_id: raw.information_folder_text_field_primary_team_id,
@@ -273,10 +298,32 @@ export class FolderListComponent {
     };
   }
 
-  readonly deadlineOptions = computed<ColumnFilterOption[]>(() =>
-    [...new Set(this.all().map((f) => f.information_folder_number_deadlinedays))]
-      .sort((a, b) => a - b)
-      .map((d) => ({ value: String(d), label: `${d} ${this.lang.isGerman() ? 'Tage' : 'days'}` })));
+  /** Acknowledgement completion, joined by folder name — same real "ALL ACKNOWLEDGEMENTS for CUI" view used on Estate Overview. */
+  readonly ackPayload = computed<RecordsPayloadMeta>(() => ({
+    id: ACKNOWLEDGEMENT_VIEW_ID.allForCui, object_id: OBJECT_ID.acknowledgement,
+    page: 0, pageSize: 200, sortBy: 'date_modified', sortOrder: 'desc', getTotalRecordCount: false
+  }));
+
+  private readonly ackStatusesByFolderName = signal<Map<string, AckStatus[]>>(new Map());
+
+  onAcksResponse(response: RecordsResponseMeta): void {
+    const byFolder = new Map<string, AckStatus[]>();
+    for (const raw of response.listData?.recordsList ?? []) {
+      const folderName = raw.acknowledgement_textfield_information_folder_name ?? '';
+      const status = (raw.acknowledgment_picklist_status ?? 'None') as AckStatus;
+      byFolder.set(folderName, [...(byFolder.get(folderName) ?? []), status]);
+    }
+    this.ackStatusesByFolderName.set(byFolder);
+  }
+
+  onAcksError(error: unknown): void {
+    console.error('Failed to load Acknowledgement records', error);
+    this.ackStatusesByFolderName.set(new Map());
+  }
+
+  stats(folderName: string) {
+    return completion(this.ackStatusesByFolderName().get(folderName) ?? []);
+  }
 
   readonly chips = computed<Chip[]>(() => [
     { id: 'myActive', label: this.lang.isGerman() ? 'Meine aktiven' : 'My active' },
@@ -302,12 +349,10 @@ export class FolderListComponent {
     const conf = this.confidentialityFilter();
     const status = this.statusFilter();
     const rollup = this.rollupFilter();
-    const deadline = this.deadlineFilter();
     return byView.filter((f) =>
       (!conf.length || conf.includes(f.information_folder_picklist_confidentiality_level)) &&
       (!status.length || status.includes(f.information_folder_picklist_status)) &&
-      (!rollup.length || rollup.includes(f.information_folder_picklist_acknowledgment_status)) &&
-      (!deadline.length || deadline.includes(String(f.information_folder_number_deadlinedays))));
+      (!rollup.length || rollup.includes(f.information_folder_picklist_acknowledgment_status)));
   });
 
   deactivate(folderId: string): void {

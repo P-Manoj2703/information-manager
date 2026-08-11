@@ -1,5 +1,6 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { RecordListDirective, RecordsPayloadMeta, RecordsResponseMeta } from '@escriba/cui-ecap-runtime';
 import { Acknowledgement, AckStatus } from '@core/models';
 import { SessionService } from '@core/services/session.service';
@@ -8,7 +9,6 @@ import { LanguageService } from '@core/i18n/language.service';
 import { ACKNOWLEDGEMENT_VIEW_ID, OBJECT_ID } from '@core/objects';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
 import { FilterChipsComponent, Chip } from '@shared/ui/filter-chips.component';
-import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-filter.component';
 import { PagerComponent } from '@shared/ui/pager.component';
 
 /**
@@ -31,10 +31,7 @@ import { PagerComponent } from '@shared/ui/pager.component';
 @Component({
   selector: 'im-chase-table',
   standalone: true,
-  imports: [
-    RouterLink, RecordListDirective, StatusBadgeComponent, FilterChipsComponent,
-    ColumnFilterComponent, PagerComponent
-  ],
+  imports: [RouterLink, RecordListDirective, StatusBadgeComponent, FilterChipsComponent, PagerComponent],
   styleUrl: './chase-table.component.scss',
   template: `
     @for (payload of payloads(); track $index) {
@@ -43,6 +40,14 @@ import { PagerComponent } from '@shared/ui/pager.component';
         (apiResponseEvent)="onAckResponse($index, $event)"
         (apiErrorEvent)="onAckError($index, $event)">
       </ng-container>
+    }
+
+    @if (folderFilter()) {
+      <div class="bar filter-banner">
+        <span>{{ lang.isGerman() ? 'Gefiltert nach Ordner:' : 'Filtered by folder:' }} <b>{{ folderFilter() }}</b></span>
+        <span class="spacer"></span>
+        <button type="button" class="ghost" (click)="clearFolderFilter()">{{ lang.isGerman() ? 'Filter entfernen' : 'Clear filter' }}</button>
+      </div>
     }
 
     <div class="bar">
@@ -55,33 +60,21 @@ import { PagerComponent } from '@shared/ui/pager.component';
         <table>
           <thead><tr>
             <th>{{ lang.isGerman() ? 'Person' : 'Person' }}</th>
-            <th>
-              <im-column-filter [title]="lang.t('folders')" [options]="folderOptions()" [(selected)]="folderFilter">
-                {{ lang.t('folders') }}
-              </im-column-filter>
-            </th>
-            <th>
-              <im-column-filter [title]="lang.t('version')" [options]="versionOptions()" [(selected)]="versionFilter">
-                {{ lang.t('version') }}
-              </im-column-filter>
-            </th>
-            <th>
-              <im-column-filter [title]="lang.t('deadline')" [options]="deadlineOptions()" [(selected)]="deadlineFilter">
-                {{ lang.t('deadline') }}
-              </im-column-filter>
-            </th>
-            <th>
-              <im-column-filter [title]="lang.t('status')" [options]="statusOptions()" [(selected)]="statusFilter">
-                {{ lang.t('status') }}
-              </im-column-filter>
-            </th>
+            <th>{{ lang.isGerman() ? 'Informationsmappe' : 'Information folder' }}</th>
+            <th>{{ lang.t('version') }}</th>
+            <th>{{ lang.t('deadline') }}</th>
+            <th>{{ lang.t('status') }}</th>
           </tr></thead>
           <tbody>
             @for (a of pagedRows(); track a.id) {
               <tr>
                 <td>
                   <a class="person" [routerLink]="['/acknowledgements', a.id]">
-                    <b>{{ a.acknowledgment_textfield_employee }}</b>
+                    <span class="avatar">{{ initials(a.acknowledgment_textfield_employee) }}</span>
+                    <span>
+                      <b>{{ a.acknowledgment_textfield_employee }}</b>
+                      <small>{{ a.acknowledgment_email_address_email }}</small>
+                    </span>
                   </a>
                 </td>
                 <td>{{ a.acknowledgement_textfield_information_folder_name }}</td>
@@ -104,15 +97,34 @@ import { PagerComponent } from '@shared/ui/pager.component';
     @if (rows().length) {
       <im-pager [total]="rows().length" [(page)]="currentPage" [(pageSize)]="pageSize" />
     }
+
+    @if (session.role() === 'informationsbereitsteller') {
+      <p class="note">
+        {{ lang.isGerman()
+          ? 'Als Informationsbereitsteller haben Sie Lesezugriff auf diese Kenntnisnahmen. Statusänderungen sind der Compliance vorbehalten.'
+          : 'As information provider you have read access to these acknowledgements. Status changes are reserved for Compliance.' }}
+      </p>
+    }
   `
 })
 export class ChaseTableComponent {
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   readonly session = inject(SessionService);
   readonly acks = inject(AcknowledgementService);
   readonly lang = inject(LanguageService);
 
   /** Compliance's real ACL sees every record, so "All" is the more useful landing chip for them. */
   readonly filter = signal(this.session.role() === 'complianceverantwortlicher' ? 'all' : 'overdue');
+
+  /**
+   * Arriving from a folder's own page (e.g. Estate Overview) via ?folder=<name>: real folder
+   * names are unique in this tenant, so a plain equality match is reliable without needing the
+   * folder's id. Forces the "All" chip too, since the folder's acknowledgements can be in any
+   * status — a status-scoped chip would silently hide most of them.
+   */
+  private readonly queryParams = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
+  readonly folderFilter = computed(() => this.queryParams().get('folder') ?? '');
 
   /** Which real ECAP view backs the current chip. */
   private readonly viewIds = computed<string[]>(() => {
@@ -145,13 +157,22 @@ export class ChaseTableComponent {
       this.ackPartials.set(Array.from({ length: count }, () => []));
     }, { allowSignalWrites: true });
 
-    // Switching chips/filters/page size can shrink or reorder the set — land back on page 1
-    // so the pager never gets stuck past the new last page.
+    // A folder deep-link needs every one of that folder's acknowledgements regardless of
+    // status, not whichever single-status chip happened to be selected before arriving.
     effect(() => {
-      this.filter(); this.folderFilter(); this.versionFilter(); this.deadlineFilter();
-      this.statusFilter(); this.pageSize();
+      if (this.folderFilter()) this.filter.set('all');
+    }, { allowSignalWrites: true });
+
+    // Switching chips/page size can shrink or reorder the set — land back on page 1 so the
+    // pager never gets stuck past the new last page.
+    effect(() => {
+      this.filter(); this.pageSize(); this.folderFilter();
       this.currentPage.set(1);
     }, { allowSignalWrites: true });
+  }
+
+  clearFolderFilter(): void {
+    this.router.navigate([], { queryParams: {} });
   }
 
   onAckResponse(index: number, response: RecordsResponseMeta): void {
@@ -195,36 +216,6 @@ export class ChaseTableComponent {
     };
   }
 
-  /** Column-header filters, empty array = no filter for that column. */
-  readonly folderFilter = signal<string[]>([]);
-  readonly versionFilter = signal<string[]>([]);
-  readonly deadlineFilter = signal<string[]>([]);
-  readonly statusFilter = signal<string[]>([]);
-
-  private readonly STATUS_LABEL: Record<AckStatus, [string, string]> = {
-    None: ['Keine', 'None'], Pending: ['Offen', 'Pending'], Overdue: ['Überfällig', 'Overdue'],
-    Done: ['Erledigt', 'Done'], Obsolete: ['Nicht mehr erforderlich', 'Obsolete']
-  };
-
-  readonly folderOptions = computed<ColumnFilterOption[]>(() =>
-    [...new Set(this.all().map((a) => a.acknowledgement_textfield_information_folder_name))]
-      .sort()
-      .map((name) => ({ value: name, label: name })));
-
-  readonly versionOptions = computed<ColumnFilterOption[]>(() =>
-    [...new Set(this.all().map((a) => a.documentversion_record))]
-      .sort()
-      .map((v) => ({ value: v, label: v })));
-
-  readonly deadlineOptions = computed<ColumnFilterOption[]>(() =>
-    [...new Set(this.all().map((a) => a.acknowledgement_date_deadline_date))]
-      .sort()
-      .map((d) => ({ value: d, label: this.lang.date(d) })));
-
-  readonly statusOptions = computed<ColumnFilterOption[]>(() =>
-    (['None', 'Pending', 'Overdue', 'Done', 'Obsolete'] as AckStatus[])
-      .map((s) => ({ value: s, label: this.STATUS_LABEL[s][this.lang.isGerman() ? 0 : 1] })));
-
   readonly chips = computed<Chip[]>(() => [
     { id: 'overdue', label: this.lang.t('overdue') },
     { id: 'pending', label: this.lang.t('pending') },
@@ -235,20 +226,18 @@ export class ChaseTableComponent {
 
   readonly rows = computed(() => {
     const folder = this.folderFilter();
-    const version = this.versionFilter();
-    const deadline = this.deadlineFilter();
-    const status = this.statusFilter();
-    return this.all().filter((a) =>
-      (!folder.length || folder.includes(a.acknowledgement_textfield_information_folder_name)) &&
-      (!version.length || version.includes(a.documentversion_record)) &&
-      (!deadline.length || deadline.includes(a.acknowledgement_date_deadline_date)) &&
-      (!status.length || status.includes(a.acknowledgment_picklist_status)));
+    return folder ? this.all().filter((a) => a.acknowledgement_textfield_information_folder_name === folder) : this.all();
   });
 
   readonly pagedRows = computed(() => {
     const start = (this.currentPage() - 1) * this.pageSize();
     return this.rows().slice(start, start + this.pageSize());
   });
+
+  initials(name: string): string {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    return ((parts[0]?.[0] ?? '') + (parts[parts.length - 1]?.[0] ?? '')).toUpperCase();
+  }
 
   exportCsv(): void {
     const head = ['employee', 'folder', 'version', 'deadline', 'status'].join(';');

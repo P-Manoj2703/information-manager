@@ -45,10 +45,14 @@ export interface DistributionTemplateOption { id: string; name: string; }
       </div>
     }
 
-    @if (appliedNames().length) {
+    @if (appliedTemplates().length) {
       <div class="sidebar__chips">
-        @for (name of appliedNames(); track name) {
-          <span class="chip">{{ name }}</span>
+        @for (t of appliedTemplates(); track t.id) {
+          <span class="chip">
+            {{ t.name }}
+            <button type="button" class="chip__remove" (click)="remove.emit(t.id)"
+                    [attr.aria-label]="lang.isGerman() ? 'Entfernen' : 'Remove'">×</button>
+          </span>
         }
       </div>
     }
@@ -61,15 +65,17 @@ export class TemplatePickerComponent {
   readonly appliedIds = input<string[]>([]);
   readonly loading = input(false);
   readonly apply = output<string>();
+  /** Undoes a template's real effect — see AudienceBuilderComponent.removeTemplate for what "undo" actually means. */
+  readonly remove = output<string>();
 
   readonly show = signal(false);
   readonly query = signal('');
 
-  readonly appliedNames = computed(() => {
+  readonly appliedTemplates = computed(() => {
     const templates = this.templates();
     return this.appliedIds()
-      .map((id) => templates.find((t) => t.id === id)?.name)
-      .filter((name): name is string => !!name);
+      .map((id) => templates.find((t) => t.id === id))
+      .filter((t): t is DistributionTemplateOption => !!t);
   });
 
   /** Multi-select: already-applied templates drop out of the pickable list, same as teams/users. */
@@ -81,6 +87,7 @@ export class TemplatePickerComponent {
   });
 
   pick(id: string): void {
+    console.log('DIAG template-picker pick() CLICKED — id:', id);
     this.apply.emit(id);
     this.query.set('');
   }

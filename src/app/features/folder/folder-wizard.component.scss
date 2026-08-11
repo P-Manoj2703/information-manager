@@ -10,6 +10,7 @@
     cursor: pointer; border-right: 1px solid var(--border-1); font-size: 13px; font-weight: 600; opacity: .55;
     &.on { background: var(--bg-mint); opacity: 1; }
     &.past { opacity: 1; }
+    &.disabled { cursor: not-allowed; }
     &:last-child { border-right: 0; }
   }
   &__num {

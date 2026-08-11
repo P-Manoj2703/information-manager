@@ -7,7 +7,7 @@ import { LanguageService } from '@core/i18n/language.service';
 import { OBJECT_ID } from '@core/objects';
 import { AckStatus } from '@core/models';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
-import { PdfViewerComponent } from './pdf-viewer.component';
+import { DocumentRow, PdfViewerComponent, documentDownloadUrl } from './pdf-viewer.component';
 
 interface AckDetailRecord {
   id: string;
@@ -37,30 +37,27 @@ interface AckDetailRecord {
   template: `
     @if (ack(); as a) {
       <div class="layout">
-        <div class="col">
-          <a class="back" routerLink="/tasks">← {{ lang.isGerman() ? 'Zurück zur Liste' : 'Back to list' }}</a>
+        <a class="back" routerLink="/tasks">← {{ lang.isGerman() ? 'Zurück zur Liste' : 'Back to list' }}</a>
 
-          <article class="card message">
-            <div class="message__meta">
-              <im-status-badge [status]="a.acknowledgment_picklist_status" />
-              <span class="mono">{{ a.documentVersionLabel }}</span>
-            </div>
-            <h1>{{ a.acknowledgement_textfield_information_folder_name }}</h1>
-            @if (a.acknowledgment_richtextarea_user_information) {
-              <span class="eyebrow">{{ lang.t('messageFrom') }}</span>
-              <div class="richtext" [innerHTML]="a.acknowledgment_richtextarea_user_information"></div>
-            }
-          </article>
+        <article class="card message">
+          <div class="message__meta">
+            <im-status-badge [status]="a.acknowledgment_picklist_status" />
+            <span class="mono">{{ a.documentVersionLabel }}</span>
+          </div>
+          <h1>{{ a.acknowledgement_textfield_information_folder_name }}</h1>
+          @if (a.acknowledgment_richtextarea_user_information) {
+            <span class="eyebrow">{{ lang.t('messageFrom') }}</span>
+            <div class="richtext" [innerHTML]="a.acknowledgment_richtextarea_user_information"></div>
+          }
+        </article>
 
-          <im-pdf-viewer [versionId]="a.documentVersionId" [canDownloadAll]="true" />
-        </div>
-
-        <aside class="task">
+        <div class="task">
           @if (a.taskId) {
             <span class="eyebrow eyebrow--teal">{{ lang.t('yourTask') }}</span>
             <h2>{{ lang.isGerman() ? 'Bestätigen Sie, dass Sie dieses Dokument gelesen haben.' : 'Confirm that you have read this document.' }}</h2>
             <dl>
               <div><dt>{{ lang.t('deadline') }}</dt><dd class="tabular">{{ lang.date(a.acknowledgement_date_deadline_date) }}</dd></div>
+              <div><dt>{{ lang.t('version') }}</dt><dd class="mono">{{ a.documentVersionLabel }}</dd></div>
               <div><dt>{{ lang.t('status') }}</dt><dd>{{ a.acknowledgment_picklist_status }}</dd></div>
             </dl>
             <button type="button" class="confirm" [disabled]="busy()" (click)="confirm(a)">
@@ -76,7 +73,28 @@ interface AckDetailRecord {
                   : 'No confirmation is (still) required for this version.' }}
             </p>
           }
-        </aside>
+        </div>
+
+        <im-pdf-viewer [versionId]="a.documentVersionId" [canDownloadAll]="true"
+                       [(previewDocId)]="selectedDocId" (documentsChange)="documents.set($event)" />
+
+        @if (documents().length) {
+          <div class="task doc-picker">
+            <span class="doc-picker__count">
+              {{ documents().length }} {{ lang.isGerman() ? 'Dokumente' : 'documents' }}
+            </span>
+            <ul class="doc-picker__list">
+              @for (d of documents(); track d.id) {
+                <li class="doc-picker__row" [class.doc-picker__row--active]="selectedDocId() === d.id">
+                  <button type="button" class="doc-picker__name" (click)="selectedDocId.set(d.id)">{{ d.name }}</button>
+                  <a class="doc-picker__download" [href]="downloadUrl(a.documentVersionId, d.id)"
+                     [download]="d.name + '.' + d.fileExtension"
+                     [attr.aria-label]="lang.isGerman() ? 'Herunterladen' : 'Download'">⬇</a>
+                </li>
+              }
+            </ul>
+          </div>
+        }
       </div>
     } @else if (!loading()) {
       <p class="missing">{{ lang.isGerman() ? 'Kenntnisnahme nicht gefunden.' : 'Acknowledgement not found.' }}</p>
@@ -93,6 +111,13 @@ export class AckDetailComponent {
   readonly busy = signal(false);
   readonly loading = signal(true);
   readonly error = signal('');
+
+  readonly documents = signal<DocumentRow[]>([]);
+  readonly selectedDocId = signal<string | null>(null);
+
+  downloadUrl(versionId: string, documentId: string): string {
+    return documentDownloadUrl(versionId, documentId);
+  }
 
   readonly ack = toSignal(
     toObservable(this.id).pipe(

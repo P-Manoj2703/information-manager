@@ -17,6 +17,8 @@ export interface InformationFolder {
   information_folder_picklist_processing_status?: ProcessingStatus;
   information_folder_number_deadlinedays: number;
   information_folder_lookup_responsible_team: string;
+  /** Display-only — the real name for the id above, read off the same {name, id} shape as created_id/modified_id. Never sent back on writes. */
+  responsibleTeamName?: string;
   /** Write-only trigger — cleared by the server after the template is applied. */
   information_folder_lu_distribution_list?: string | null;
   information_folder_text_field_userid?: string;

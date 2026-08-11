@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, input, signal } from '@angular/core';
+import { Component, DestroyRef, effect, inject, input, model, output, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { toSignal, toObservable } from '@angular/core/rxjs-interop';
@@ -6,7 +6,11 @@ import { catchError, map, of, switchMap } from 'rxjs';
 import { LanguageService } from '@core/i18n/language.service';
 import { OBJECT_ID } from '@core/objects';
 
-interface DocumentRow { id: string; name: string; fileExtension: string }
+export interface DocumentRow { id: string; name: string; fileExtension: string }
+
+export function documentDownloadUrl(versionId: string, documentId: string): string {
+  return `/networking/rest/dms/${OBJECT_ID.documentVersion}/${versionId}/document/${documentId}/download`;
+}
 
 /**
  * Real document list for the acknowledgement's linked Document Version, via the same
@@ -14,9 +18,9 @@ interface DocumentRow { id: string; name: string; fileExtension: string }
  * (version-detail.component.ts). The real download endpoint always answers with
  * Content-Disposition: attachment (confirmed live) — a plain <a href> or <iframe src>
  * against it always forces a download, never an inline view. To let the recipient actually
- * read the document in place, "Preview" fetches the same bytes as a blob via HttpClient
+ * read the document in place, previewing fetches the same bytes as a blob via HttpClient
  * (Content-Disposition only governs browser-native navigation, not XHR/fetch) and renders
- * that blob in an iframe; "Download" keeps using the real endpoint directly.
+ * that blob in an iframe; the download icon/button keeps using the real endpoint directly.
  */
 @Component({
   selector: 'im-pdf-viewer',
@@ -24,25 +28,15 @@ interface DocumentRow { id: string; name: string; fileExtension: string }
   styles: [`
     :host { display: block; }
     .frame { background: #fff; border: 1px solid var(--border-1); border-radius: var(--radius-card); overflow: hidden; }
-    .bar { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border-1); }
-    .bar strong { font-size: 14px; }
+    .bar { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-bottom: 1px solid var(--border-1); }
+    .bar strong { font-size: 14px; flex: 0 0 auto; }
     .bar .spacer { margin-left: auto; }
-    .files { list-style: none; margin: 0; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
-    .file { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid var(--border-1);
-            border-radius: var(--radius-input); }
-    .file--active { border-color: var(--escriba-teal); }
-    .file__name { font-size: 13px; flex: 1; overflow-wrap: anywhere; }
-    .file__actions { display: flex; gap: 8px; flex-shrink: 0; }
     .ghost {
       border: 1px solid var(--border-2); background: #fff; color: var(--fg-2); cursor: pointer; text-decoration: none;
       font: inherit; font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: var(--radius-pill);
       white-space: nowrap;
     }
-    .ghost--active { border-color: var(--escriba-teal); color: var(--escriba-teal); }
     .empty { padding: 32px; text-align: center; color: var(--fg-3); font-size: 13px; }
-    .preview { border-top: 1px solid var(--border-1); }
-    .preview__bar { display: flex; align-items: center; gap: 12px; padding: 10px 20px; background: var(--bg-2); }
-    .preview__bar strong { font-size: 13px; flex: 1; overflow-wrap: anywhere; }
     .preview__frame { width: 100%; height: 70vh; border: 0; display: block; }
     .preview__status { padding: 32px; text-align: center; color: var(--fg-3); font-size: 13px; }
   `],
@@ -55,42 +49,17 @@ interface DocumentRow { id: string; name: string; fileExtension: string }
           <button type="button" class="ghost" (click)="downloadAll()">{{ lang.t('downloadAll') }}</button>
         }
       </div>
-      @if (documents().length) {
-        <ul class="files">
-          @for (d of documents(); track d.id) {
-            <li class="file" [class.file--active]="previewDocId() === d.id">
-              <span class="file__name">{{ d.name }}</span>
-              <div class="file__actions">
-                <button type="button" class="ghost" [class.ghost--active]="previewDocId() === d.id" (click)="togglePreview(d)">
-                  {{ previewDocId() === d.id ? (lang.isGerman() ? 'Schließen' : 'Close') : (lang.isGerman() ? 'Vorschau' : 'Preview') }}
-                </button>
-                <a class="ghost" [href]="downloadUrl(d.id)" [download]="d.name + '.' + d.fileExtension">
-                  {{ lang.isGerman() ? 'Herunterladen' : 'Download' }}
-                </a>
-              </div>
-            </li>
-          }
-        </ul>
-      } @else {
+
+      @if (!documents().length) {
         <p class="empty">
           {{ lang.isGerman() ? 'Für diese Version wurde noch kein Dokument hochgeladen.' : 'No document has been uploaded for this version yet.' }}
         </p>
-      }
-
-      @if (previewDocId()) {
-        <div class="preview">
-          <div class="preview__bar">
-            <strong>{{ previewName() }}</strong>
-            <button type="button" class="ghost" (click)="closePreview()">{{ lang.isGerman() ? 'Schließen' : 'Close' }}</button>
-          </div>
-          @if (previewError()) {
-            <p class="preview__status">{{ previewError() }}</p>
-          } @else if (previewUrl()) {
-            <iframe class="preview__frame" [src]="previewUrl()"></iframe>
-          } @else {
-            <p class="preview__status">{{ lang.isGerman() ? 'Wird geladen…' : 'Loading…' }}</p>
-          }
-        </div>
+      } @else if (previewError()) {
+        <p class="preview__status">{{ previewError() }}</p>
+      } @else if (previewUrl()) {
+        <iframe class="preview__frame" [src]="previewUrl()"></iframe>
+      } @else {
+        <p class="preview__status">{{ lang.isGerman() ? 'Wird geladen…' : 'Loading…' }}</p>
       }
     </div>
   `
@@ -107,14 +76,37 @@ export class PdfViewerComponent {
     { initialValue: [] as DocumentRow[] }
   );
 
-  readonly previewDocId = signal<string | null>(null);
+  /** So a sidebar elsewhere on the page (e.g. a document-count panel) can list/select without duplicating this fetch. */
+  readonly documentsChange = output<DocumentRow[]>();
+
+  /** Two-way — lets a picker outside this component drive which document is shown. */
+  readonly previewDocId = model<string | null>(null);
   readonly previewName = signal('');
   readonly previewUrl = signal<SafeResourceUrl | null>(null);
   readonly previewError = signal('');
   private previewObjectUrl: string | null = null;
+  private loadedDocId: string | null = null;
 
   constructor() {
     inject(DestroyRef).onDestroy(() => this.revokePreviewObjectUrl());
+
+    // A folder can have several documents — recipients shouldn't have to click one just to
+    // read the first, so whichever loads first opens automatically.
+    effect(() => {
+      const docs = this.documents();
+      this.documentsChange.emit(docs);
+      if (docs.length && !this.previewDocId()) this.previewDocId.set(docs[0].id);
+    }, { allowSignalWrites: true });
+
+    // Reacts to previewDocId changing from ANY source — not just a click inside this
+    // component, but also an external picker (e.g. a sidebar elsewhere on the page) driving
+    // the same two-way-bound signal. Without this, setting the model from outside moved the
+    // selection highlight there but never actually fetched/rendered that document's PDF.
+    effect(() => {
+      const id = this.previewDocId();
+      const doc = this.documents().find((d) => d.id === id);
+      if (doc) this.loadPreview(doc);
+    }, { allowSignalWrites: true });
   }
 
   private fetchDocuments(versionId: string) {
@@ -135,21 +127,22 @@ export class PdfViewerComponent {
   }
 
   downloadUrl(documentId: string): string {
-    return `/networking/rest/dms/${OBJECT_ID.documentVersion}/${this.versionId()}/document/${documentId}/download`;
+    return documentDownloadUrl(this.versionId(), documentId);
   }
 
-  togglePreview(d: DocumentRow): void {
-    if (this.previewDocId() === d.id) { this.closePreview(); return; }
+  /** Fetches and renders one document's PDF — skips if it's already the one currently shown. */
+  private loadPreview(d: DocumentRow): void {
+    if (this.loadedDocId === d.id) return;
+    this.loadedDocId = d.id;
     this.revokePreviewObjectUrl();
-    this.previewDocId.set(d.id);
     this.previewName.set(d.name);
     this.previewUrl.set(null);
     this.previewError.set('');
 
     this.http.get(this.downloadUrl(d.id), { responseType: 'blob' }).subscribe({
       next: (blob) => {
-        // Only the response we asked for last should win, in case the user clicked another row meanwhile.
-        if (this.previewDocId() !== d.id) return;
+        // Only the response we asked for last should win, in case the selection changed meanwhile.
+        if (this.loadedDocId !== d.id) return;
         // The download endpoint sends no Content-Type header, so the blob comes back with an
         // empty MIME type — the browser then shows raw bytes as text instead of rendering a PDF.
         // Force the correct type client-side; every document in this DMS folder is a PDF.
@@ -159,17 +152,10 @@ export class PdfViewerComponent {
       },
       error: (err) => {
         console.error('Document preview fetch failed', err);
-        if (this.previewDocId() !== d.id) return;
+        if (this.loadedDocId !== d.id) return;
         this.previewError.set(this.lang.isGerman() ? 'Vorschau fehlgeschlagen.' : 'Preview failed.');
       }
     });
-  }
-
-  closePreview(): void {
-    this.revokePreviewObjectUrl();
-    this.previewDocId.set(null);
-    this.previewUrl.set(null);
-    this.previewError.set('');
   }
 
   private revokePreviewObjectUrl(): void {

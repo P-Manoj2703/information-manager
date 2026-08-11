@@ -6,7 +6,7 @@ type AnyStatus = AckStatus | FolderStatus | VersionStatus;
 type Tone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
 
 const TONE: Record<string, Tone> = {
-  Pending: 'info', Overdue: 'danger', Done: 'success', Obsolete: 'neutral', None: 'neutral',
+  Pending: 'success', Overdue: 'danger', Done: 'success', Obsolete: 'neutral', None: 'neutral',
   Draft: 'neutral', Active: 'success', Inactive: 'neutral'
 };
 const LABEL: Record<string, [string, string]> = {

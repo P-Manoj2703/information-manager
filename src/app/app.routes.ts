@@ -1,6 +1,12 @@
 import { Routes } from '@angular/router';
+import { inject } from '@angular/core';
 import { roleGuard } from '@core/guards/role.guard';
 import { authGuard } from '@core/guards/auth.guard';
+import { SessionService } from '@core/services/session.service';
+import { DEFAULT_ROUTE } from '@core/default-route';
+
+/** '/tasks' is Recipient-only — a fixed redirect target here caused an infinite loop for every other role (see role.guard.ts). */
+const toDefaultRoute = () => DEFAULT_ROUTE[inject(SessionService).role()];
 
 export const routes: Routes = [
   { path: 'login', loadComponent: () => import('@features/auth/login.component').then((m) => m.LoginComponent) },
@@ -9,7 +15,7 @@ export const routes: Routes = [
     path: '',
     canActivate: [authGuard],
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'tasks' },
+      { path: '', pathMatch: 'full', redirectTo: toDefaultRoute },
 
       {
         path: 'tasks',
@@ -100,7 +106,7 @@ export const routes: Routes = [
         loadComponent: () => import('@features/admin/monitoring.component').then((m) => m.MonitoringComponent)
       },
 
-      { path: '**', redirectTo: 'tasks' }
+      { path: '**', redirectTo: toDefaultRoute }
     ]
   }
 ];

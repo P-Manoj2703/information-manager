@@ -1,7 +1,7 @@
 import { Component, EventEmitter, Output, computed, effect, inject, input, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
-import { Observable, catchError, map, of, switchMap } from 'rxjs';
+import { Observable, catchError, forkJoin, map, of, switchMap } from 'rxjs';
 import { LanguageService } from '@core/i18n/language.service';
 import { EMPLOYEE_LAYOUT_ID, OBJECT_ID, ORGANIZATIONAL_UNIT_LAYOUT_ID } from '@core/objects';
 import { DistributionTemplateOption, TemplatePickerComponent } from './template-picker.component';
@@ -99,9 +99,16 @@ function isCheckboxActive(val: unknown): boolean {
               <div class="row__main">
                 <div class="row__name">
                   <strong>{{ u.teamName }}</strong>
-                  @if (u.includeTeamHierarchy) {
-                    <small>{{ lang.isGerman() ? 'inkl. Unterteams' : 'includes sub-teams' }}</small>
-                  }
+                  <small>
+                    @if (u.includeTeamHierarchy) {
+                      {{ memberCountFor(u.teamId) }} {{ lang.isGerman() ? 'direkt' : 'direct' }}
+                      @if (subTeamMemberCount(u.teamId)) {
+                        · {{ subTeamMemberCount(u.teamId) }} {{ lang.isGerman() ? 'aus Unterteams' : 'from sub-teams' }}
+                      }
+                    } @else {
+                      {{ memberCountFor(u.teamId) }} {{ lang.isGerman() ? 'Mitglieder' : 'members' }}
+                    }
+                  </small>
                 </div>
                 <label class="switch" [class.switch--locked]="u.includeTeamHierarchy">
                   <input type="checkbox" class="switch__input" [checked]="u.includeTeamHierarchy"
@@ -116,7 +123,10 @@ function isCheckboxActive(val: unknown): boolean {
               @if (u.includeTeamHierarchy && linkedDescendantsOf(u.teamId).length) {
                 <ul class="tree">
                   @for (c of linkedDescendantsOf(u.teamId); track c.id) {
-                    <li><span>{{ c.name }}</span></li>
+                    <li>
+                      <span>{{ c.name }}</span>
+                      <span class="tree__count">{{ lang.isGerman() ? 'auto-verknüpft' : 'auto-linked' }} · {{ memberCountFor(c.id) }}</span>
+                    </li>
                   }
                 </ul>
               }
@@ -201,7 +211,7 @@ function isCheckboxActive(val: unknown): boolean {
             <p class="hint">{{ lang.isGerman() ? 'Wird angewendet…' : 'Applying…' }}</p>
           }
           <im-template-picker [templates]="templates()" [appliedIds]="appliedTemplateIds()"
-                               [loading]="templatesLoading()" (apply)="applyTemplate($event)" />
+                               [loading]="templatesLoading()" (apply)="applyTemplate($event)" (remove)="removeTemplate($event)" />
         </aside>
       </div>
 
@@ -219,6 +229,8 @@ export class AudienceBuilderComponent {
   readonly teamQuery = signal('');
   readonly userQuery = signal('');
   readonly appliedTemplateIds = signal<string[]>([]);
+  /** templateId -> exactly the org-unit/employee recordIds that template's apply created (same-session only, see removeTemplate). */
+  private readonly templateCreatedRecords = signal<Map<string, { orgUnitRecordIds: string[]; employeeRecordIds: string[] }>>(new Map());
   readonly showTeamPicker = signal(false);
   readonly showUserPicker = signal(false);
   readonly newUnitIncludeHierarchy = signal(false);
@@ -394,6 +406,56 @@ export class AudienceBuilderComponent {
     return this.descendantsOf(teamId).filter((c) => linkedTeamIds.has(c.id));
   }
 
+  /** teamId -> real member count, from the same Teams x Users junction object used for folder-wizard's "My Team" fetch. */
+  private readonly teamMemberCounts = signal<Map<string, number>>(new Map());
+
+  memberCountFor(teamId: string): number {
+    return this.teamMemberCounts().get(teamId) ?? 0;
+  }
+
+  /** Sum of each linked descendant's own direct count — matches "N from sub-teams" in the design. */
+  subTeamMemberCount(teamId: string): number {
+    return this.linkedDescendantsOf(teamId).reduce((sum, c) => sum + this.memberCountFor(c.id), 0);
+  }
+
+  /**
+   * Real per-team member count via a filtered, count-only query against the junction object —
+   * pageSize 1 since only totalRecordCount is needed, not the rows themselves. Filtering by an
+   * exact value (rather than fetching the object unfiltered) is the mitigation already proven
+   * reliable for this same object elsewhere in the app.
+   */
+  private fetchTeamMemberCount(teamId: string): Observable<{ id: string; count: number }> {
+    return this.http.get<any>(`/networking/rest/record/${OBJECT_ID.informationManagerTeamsUsers}`, {
+      params: {
+        filter: `(informationmanagerteams_record equals '${teamId}')`,
+        fieldList: 'id', pageSize: 1, getTotalRecordCount: true, alt: 'json'
+      }
+    }).pipe(
+      map((response) => ({ id: teamId, count: Number(response?.platform?.totalRecordCount ?? 0) })),
+      catchError((err) => { console.error('Team member count fetch failed', teamId, err); return of({ id: teamId, count: 0 }); })
+    );
+  }
+
+  /** Fetches counts for every team currently shown (top-level rows + their linked descendants), skipping ones already known. */
+  private loadTeamMemberCounts(): void {
+    const known = this.teamMemberCounts();
+    const ids = new Set<string>();
+    this.linkedOrgUnits().forEach((u) => {
+      ids.add(u.teamId);
+      if (u.includeTeamHierarchy) this.linkedDescendantsOf(u.teamId).forEach((c) => ids.add(c.id));
+    });
+    const toFetch = [...ids].filter((id) => id && !known.has(id));
+    if (!toFetch.length) return;
+
+    forkJoin(toFetch.map((id) => this.fetchTeamMemberCount(id))).subscribe((results) => {
+      this.teamMemberCounts.update((map) => {
+        const next = new Map(map);
+        results.forEach(({ id, count }) => next.set(id, count));
+        return next;
+      });
+    });
+  }
+
   constructor() {
     effect(() => {
       if (this.folderId()) {
@@ -421,29 +483,35 @@ export class AudienceBuilderComponent {
       .filter((u) => !q || u.label.toLowerCase().includes(q));
   });
 
-  /** GET the real Organizational Units rows already linked to this folder. */
-  loadLinkedOrgUnits(): void {
+  /** Real GET, no subscription — lets applyTemplate/removeTemplate diff a before/after snapshot without a second, slightly different fetch. */
+  private fetchLinkedOrgUnits(): Observable<LinkedOrgUnit[]> {
     const folderId = this.folderId();
-    if (!folderId) return;
-    this.http.get<any>(`/networking/rest/record/${OBJECT_ID.organizationalUnits}`, {
+    if (!folderId) return of([]);
+    return this.http.get<any>(`/networking/rest/record/${OBJECT_ID.organizationalUnits}`, {
       params: {
         filter: `(informationfolder_record equals '${folderId}')`,
         fieldList: 'id,informationmanagerteams_record,imt_if_check_box_include_team_hierarchy,date_modified',
         alt: 'json'
       }
     }).pipe(
-      map((response): LinkedOrgUnit[] => {
-        console.log('DIAG loadLinkedOrgUnits raw response:', JSON.stringify(response));
-        return [response?.platform?.record ?? []].flat().map((r: any) => ({
+      map((response): LinkedOrgUnit[] =>
+        [response?.platform?.record ?? []].flat().map((r: any) => ({
           recordId: r.id,
           teamId: r.informationmanagerteams_record?.content ?? r.informationmanagerteams_record?.id ?? '',
           teamName: r.informationmanagerteams_record?.displayValue ?? '',
           includeTeamHierarchy: isCheckboxActive(r.imt_if_check_box_include_team_hierarchy),
           lastModifiedTimestamp: r.date_modified ?? ''
-        }));
-      }),
+        }))),
       catchError((err) => { console.error('Organizational units fetch failed', err); return of([] as LinkedOrgUnit[]); })
-    ).subscribe((units) => this.linkedOrgUnits.set(units));
+    );
+  }
+
+  /** GET the real Organizational Units rows already linked to this folder. */
+  loadLinkedOrgUnits(): void {
+    this.fetchLinkedOrgUnits().subscribe((units) => {
+      this.linkedOrgUnits.set(units);
+      this.loadTeamMemberCounts();
+    });
   }
 
   /**
@@ -460,8 +528,11 @@ export class AudienceBuilderComponent {
       layout_id: ORGANIZATIONAL_UNIT_LAYOUT_ID,
       last_modified_timestamp: unit.lastModifiedTimestamp
     }).subscribe({
-      next: () => this.linkedOrgUnits.update((units) =>
-        units.map((u) => u.recordId === unit.recordId ? { ...u, includeTeamHierarchy: true } : u)),
+      next: () => {
+        this.linkedOrgUnits.update((units) =>
+          units.map((u) => u.recordId === unit.recordId ? { ...u, includeTeamHierarchy: true } : u));
+        this.loadTeamMemberCounts();
+      },
       error: (err) => {
         console.error('Organizational unit hierarchy update failed', err);
         this.orgUnitError.set(this.lang.isGerman() ? 'Aktualisierung fehlgeschlagen.' : 'Update failed.');
@@ -471,8 +542,10 @@ export class AudienceBuilderComponent {
 
   /** Creates the real Organizational Units child record — ECAP's own server-side rule then expands the hierarchy and creates acknowledgements. */
   addOrgUnit(teamId: string, teamName: string): void {
+    console.log('DIAG addOrgUnit CLICKED — teamId:', teamId, 'teamName:', teamName);
     const folderId = this.folderId();
-    if (!folderId) return;
+    console.log('DIAG addOrgUnit — folderId:', JSON.stringify(folderId));
+    if (!folderId) { console.log('DIAG addOrgUnit: folderId is empty, returning early'); return; }
     this.orgUnitError.set('');
     const includeTeamHierarchy = this.newUnitIncludeHierarchy();
     const body = {
@@ -512,11 +585,11 @@ export class AudienceBuilderComponent {
     });
   }
 
-  /** GET the real Employees rows (Folder<->User links) already linked to this folder. */
-  loadLinkedEmployees(): void {
+  /** Real GET, no subscription — same reasoning as fetchLinkedOrgUnits above. */
+  private fetchLinkedEmployees(): Observable<LinkedEmployee[]> {
     const folderId = this.folderId();
-    if (!folderId) return;
-    this.http.get<any>(`/networking/rest/record/${OBJECT_ID.employees}`, {
+    if (!folderId) return of([]);
+    return this.http.get<any>(`/networking/rest/record/${OBJECT_ID.employees}`, {
       params: {
         filter: `(informationfolder_record equals '${folderId}')`,
         fieldList: 'id,informationmanagerusers_record',
@@ -530,7 +603,12 @@ export class AudienceBuilderComponent {
           userLabel: r.informationmanagerusers_record?.displayValue ?? ''
         }))),
       catchError((err) => { console.error('Employees fetch failed', err); return of([] as LinkedEmployee[]); })
-    ).subscribe((employees) => this.linkedEmployees.set(employees));
+    );
+  }
+
+  /** GET the real Employees rows (Folder<->User links) already linked to this folder. */
+  loadLinkedEmployees(): void {
+    this.fetchLinkedEmployees().subscribe((employees) => this.linkedEmployees.set(employees));
   }
 
   /** Creates the real Employees child record — ECAP's own server-side rule then creates that user's acknowledgement. */
@@ -581,8 +659,10 @@ export class AudienceBuilderComponent {
    * triggers the copy, reading whatever is currently saved on the field.
    */
   applyTemplate(templateId: string): void {
+    console.log('DIAG applyTemplate CLICKED — templateId:', templateId);
     const folderId = this.folderId();
-    if (!folderId) return;
+    console.log('DIAG applyTemplate — folderId:', JSON.stringify(folderId));
+    if (!folderId) { console.log('DIAG applyTemplate: folderId is empty, returning early'); return; }
     this.templateError.set('');
     this.templateApplying.set(true);
 
@@ -614,10 +694,28 @@ export class AudienceBuilderComponent {
       })
     ).subscribe({
       next: () => {
-        this.templateApplying.set(false);
-        this.loadLinkedOrgUnits();
-        this.loadLinkedEmployees();
-        this.appliedTemplateIds.update((ids) => ids.includes(templateId) ? ids : [...ids, templateId]);
+        // ECAP itself never tags which org-unit/employee rows a given template created — the
+        // only way to know what "undo" should delete is to diff the audience right before vs.
+        // right after this apply. That means removeTemplate() only works for the rest of this
+        // page's lifetime, not after a reload; acceptable trade-off, confirmed with the user.
+        const beforeOrgUnitIds = new Set(this.linkedOrgUnits().map((u) => u.recordId));
+        const beforeEmployeeIds = new Set(this.linkedEmployees().map((e) => e.recordId));
+
+        forkJoin({ units: this.fetchLinkedOrgUnits(), employees: this.fetchLinkedEmployees() }).subscribe(({ units, employees }) => {
+          this.templateApplying.set(false);
+          this.linkedOrgUnits.set(units);
+          this.linkedEmployees.set(employees);
+          this.loadTeamMemberCounts();
+
+          const newOrgUnitIds = units.map((u) => u.recordId).filter((id) => !beforeOrgUnitIds.has(id));
+          const newEmployeeIds = employees.map((e) => e.recordId).filter((id) => !beforeEmployeeIds.has(id));
+          this.templateCreatedRecords.update((map) => {
+            const next = new Map(map);
+            next.set(templateId, { orgUnitRecordIds: newOrgUnitIds, employeeRecordIds: newEmployeeIds });
+            return next;
+          });
+          this.appliedTemplateIds.update((ids) => ids.includes(templateId) ? ids : [...ids, templateId]);
+        });
       },
       error: (err) => {
         console.error('Distribution template apply failed', err);
@@ -625,6 +723,25 @@ export class AudienceBuilderComponent {
         this.templateError.set(err?.message || (this.lang.isGerman() ? 'Anwendung fehlgeschlagen.' : 'Apply failed.'));
       }
     });
+  }
+
+  /**
+   * Deletes exactly the org-unit/employee rows this specific template's apply created (see the
+   * diff captured in applyTemplate) — not every row currently on the folder, so anything added
+   * manually before or after applying the template is left alone.
+   */
+  removeTemplate(templateId: string): void {
+    const created = this.templateCreatedRecords().get(templateId);
+    if (created) {
+      created.orgUnitRecordIds.forEach((id) => this.removeOrgUnit(id));
+      created.employeeRecordIds.forEach((id) => this.removeEmployee(id));
+      this.templateCreatedRecords.update((map) => {
+        const next = new Map(map);
+        next.delete(templateId);
+        return next;
+      });
+    }
+    this.appliedTemplateIds.update((ids) => ids.filter((id) => id !== templateId));
   }
 
   save(): void {

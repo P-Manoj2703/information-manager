@@ -1,4 +1,6 @@
-.bar { display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap; .spacer { margin-left:auto; } }
+.bar { display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap; font-size:13px; color:var(--fg-2);
+       .spacer { margin-left:auto; } }
+.filter-banner { background:var(--bg-mint); border:1px solid var(--border-1); border-radius:var(--radius-input); padding:10px 14px; }
 .scroll { overflow-x:auto; background:#fff; border:1px solid var(--border-1); border-radius:var(--radius-card); }
 table { width:100%; min-width:900px; border-collapse:collapse; }
 th { text-align:left; font-size:11px; font-weight:700; letter-spacing:.08em; color:var(--fg-3);
@@ -7,9 +9,12 @@ td { padding:14px 20px; border-top:1px solid var(--border-1); font-size:13px; ve
   b { display:block; font-size:13px; }
   small { display:block; font-size:11px; color:var(--fg-3); margin-top:2px; }
   small.late { color:var(--danger); } }
-.person { display:inline-block; text-decoration:none; color:inherit;
+.person { display:flex; align-items:center; gap:10px; text-decoration:none; color:inherit;
   b { color:var(--escriba-teal-700); }
   &:hover b { text-decoration:underline; } }
+.avatar { flex-shrink:0; width:32px; height:32px; border-radius:var(--radius-pill); background:var(--bg-3);
+          color:var(--fg-2); font-size:11px; font-weight:700; display:grid; place-items:center; }
 .ghost { border:1px solid var(--border-2); background:#fff; color:var(--fg-2); cursor:pointer;
          font:inherit; font-size:12px; font-weight:600; padding:5px 11px; border-radius:var(--radius-pill); white-space:nowrap; }
 .empty { text-align:center; color:var(--fg-3); padding:24px; }
+.note { margin:14px 4px 0; font-size:13px; color:var(--fg-3); }

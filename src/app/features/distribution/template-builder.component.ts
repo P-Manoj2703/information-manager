@@ -3,7 +3,7 @@ import { Router, RouterLink } from '@angular/router';
 import { toSignal, toObservable } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
 import { RecordCreateDirective } from '@escriba/cui-ecap-runtime';
-import { Observable, catchError, map, of, switchMap } from 'rxjs';
+import { Observable, catchError, forkJoin, map, of, switchMap } from 'rxjs';
 import { LanguageService } from '@core/i18n/language.service';
 import { OBJECT_ID } from '@core/objects';
 
@@ -115,14 +115,21 @@ const DISTRIBUTION_LIST_LAYOUT_ID = 'cb599bfbc9dd4071b81f31afd10663ca';
               </button>
             </header>
 
-            @for (t of linkedTeams(); track t.recordId) {
+            @for (t of topLevelLinkedTeams(); track t.recordId) {
               <div class="row">
                 <div class="row__main">
                   <div class="row__name">
                     <strong>{{ t.teamName }}</strong>
-                    @if (t.includeTeamHierarchy) {
-                      <small>{{ lang.isGerman() ? 'inkl. Unterteams' : 'includes sub-teams' }}</small>
-                    }
+                    <small>
+                      @if (t.includeTeamHierarchy) {
+                        {{ memberCountFor(t.teamId) }} {{ lang.isGerman() ? 'direkt' : 'direct' }}
+                        @if (subTeamMemberCount(t.teamId)) {
+                          · {{ subTeamMemberCount(t.teamId) }} {{ lang.isGerman() ? 'aus Unterteams' : 'from sub-teams' }}
+                        }
+                      } @else {
+                        {{ memberCountFor(t.teamId) }} {{ lang.isGerman() ? 'Mitglieder' : 'members' }}
+                      }
+                    </small>
                   </div>
                   <label class="switch" [class.switch--locked]="t.includeTeamHierarchy">
                     <input type="checkbox" class="switch__input" [checked]="t.includeTeamHierarchy"
@@ -134,6 +141,16 @@ const DISTRIBUTION_LIST_LAYOUT_ID = 'cb599bfbc9dd4071b81f31afd10663ca';
                   </label>
                   <button type="button" class="x" (click)="removeTeam(t.recordId)" aria-label="remove">×</button>
                 </div>
+                @if (t.includeTeamHierarchy && linkedDescendantsOf(t.teamId).length) {
+                  <ul class="tree">
+                    @for (c of linkedDescendantsOf(t.teamId); track c.id) {
+                      <li>
+                        <span>{{ c.name }}</span>
+                        <span class="tree__count">{{ lang.isGerman() ? 'auto-verknüpft' : 'auto-linked' }} · {{ memberCountFor(c.id) }}</span>
+                      </li>
+                    }
+                  </ul>
+                }
               </div>
             }
 
@@ -329,6 +346,84 @@ export class TemplateBuilderComponent {
     { initialValue: [] as OrgUser[] }
   );
 
+  /** id -> direct children, from information_manager_teams_lookup_self_referencing (real parent pointer within this same object). */
+  private readonly orgTeamChildren = computed(() => {
+    const byParent = new Map<string, OrgTeam[]>();
+    this.teams().forEach((t) => {
+      if (!t.parentId || t.parentId === t.id) return;
+      byParent.set(t.parentId, [...(byParent.get(t.parentId) ?? []), t]);
+    });
+    return byParent;
+  });
+
+  /** All descendants (recursive) of a team, via the real self-referencing parent field. */
+  descendantsOf(teamId: string): OrgTeam[] {
+    const out: OrgTeam[] = [];
+    const walk = (id: string) => (this.orgTeamChildren().get(id) ?? []).forEach((c) => { out.push(c); walk(c.id); });
+    walk(teamId);
+    return out;
+  }
+
+  /**
+   * ECAP's own hierarchy-expansion rule creates one real, separate Distribution_List_Teams row
+   * per descendant team — group them under their real linked parent instead of listing them
+   * again as top-level rows (same approach as AudienceBuilderComponent).
+   */
+  readonly topLevelLinkedTeams = computed(() => {
+    const descendantTeamIds = new Set<string>();
+    this.linkedTeams().filter((t) => t.includeTeamHierarchy)
+      .forEach((t) => this.descendantsOf(t.teamId).forEach((c) => descendantTeamIds.add(c.id)));
+    return this.linkedTeams().filter((t) => !descendantTeamIds.has(t.teamId));
+  });
+
+  /** Descendant teams of this row that are actually confirmed present in linkedTeams (real synced state, not a guess). */
+  linkedDescendantsOf(teamId: string): OrgTeam[] {
+    const linkedTeamIds = new Set(this.linkedTeams().map((t) => t.teamId));
+    return this.descendantsOf(teamId).filter((c) => linkedTeamIds.has(c.id));
+  }
+
+  /** teamId -> real member count, from the Teams x Users junction object (same source as AudienceBuilderComponent). */
+  private readonly teamMemberCounts = signal<Map<string, number>>(new Map());
+
+  memberCountFor(teamId: string): number {
+    return this.teamMemberCounts().get(teamId) ?? 0;
+  }
+
+  subTeamMemberCount(teamId: string): number {
+    return this.linkedDescendantsOf(teamId).reduce((sum, c) => sum + this.memberCountFor(c.id), 0);
+  }
+
+  private fetchTeamMemberCount(teamId: string): Observable<{ id: string; count: number }> {
+    return this.http.get<any>(`/networking/rest/record/${OBJECT_ID.informationManagerTeamsUsers}`, {
+      params: {
+        filter: `(informationmanagerteams_record equals '${teamId}')`,
+        fieldList: 'id', pageSize: 1, getTotalRecordCount: true, alt: 'json'
+      }
+    }).pipe(
+      map((response) => ({ id: teamId, count: Number(response?.platform?.totalRecordCount ?? 0) })),
+      catchError((err) => { console.error('Team member count fetch failed', teamId, err); return of({ id: teamId, count: 0 }); })
+    );
+  }
+
+  private loadTeamMemberCounts(): void {
+    const known = this.teamMemberCounts();
+    const ids = new Set<string>();
+    this.linkedTeams().forEach((t) => {
+      ids.add(t.teamId);
+      if (t.includeTeamHierarchy) this.linkedDescendantsOf(t.teamId).forEach((c) => ids.add(c.id));
+    });
+    const toFetch = [...ids].filter((id) => id && !known.has(id));
+    if (!toFetch.length) return;
+
+    forkJoin(toFetch.map((id) => this.fetchTeamMemberCount(id))).subscribe((results) => {
+      this.teamMemberCounts.update((map) => {
+        const next = new Map(map);
+        results.forEach(({ id, count }) => next.set(id, count));
+        return next;
+      });
+    });
+  }
+
   readonly addableTeams = computed(() => {
     const q = this.teamQuery().trim().toLowerCase();
     const linkedIds = new Set(this.linkedTeams().map((t) => t.teamId));
@@ -406,7 +501,10 @@ export class TemplateBuilderComponent {
           lastModifiedTimestamp: r.date_modified ?? ''
         }))),
       catchError((err) => { console.error('Linked teams fetch failed', err); return of([] as LinkedTeam[]); })
-    ).subscribe((teams) => this.linkedTeams.set(teams));
+    ).subscribe((teams) => {
+      this.linkedTeams.set(teams);
+      this.loadTeamMemberCounts();
+    });
   }
 
   /** Same one-way pattern as the folder's own Audience panel: only false → true, never back off. */
@@ -418,8 +516,11 @@ export class TemplateBuilderComponent {
       layout_id: DISTRIBUTION_LIST_TEAMS_LAYOUT_ID,
       last_modified_timestamp: team.lastModifiedTimestamp
     }).subscribe({
-      next: () => this.linkedTeams.update((teams) =>
-        teams.map((t) => t.recordId === team.recordId ? { ...t, includeTeamHierarchy: true } : t)),
+      next: () => {
+        this.linkedTeams.update((teams) =>
+          teams.map((t) => t.recordId === team.recordId ? { ...t, includeTeamHierarchy: true } : t));
+        this.loadTeamMemberCounts();
+      },
       error: (err) => {
         console.error('Template team hierarchy update failed', err);
         this.teamError.set(this.lang.isGerman() ? 'Aktualisierung fehlgeschlagen.' : 'Update failed.');
