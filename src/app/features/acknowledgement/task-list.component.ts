@@ -118,7 +118,10 @@ export class TaskListComponent {
   readonly lang = inject(LanguageService);
 
   /** Deliberate deviation: the tenant default view is My Completed. */
-  readonly filter = signal<string>('open');
+  readonly filter = signal<string>('pending');
+
+  /** payloads()[index] <-> this map: each single-status chip renders exactly one real ECAP view's own rows, never a merge. */
+  private readonly VIEW_INDEX: Record<string, number> = { pending: 0, overdue: 1, done: 2, obsolete: 3 };
 
   readonly payloads = computed<RecordsPayloadMeta[]>(() => [
     ACKNOWLEDGEMENT_VIEW_ID.myPending, ACKNOWLEDGEMENT_VIEW_ID.myOverdue,
@@ -291,27 +294,26 @@ export class TaskListComponent {
   });
 
   readonly chips = computed<Chip[]>(() => [
-    { id: 'open', label: this.lang.t('pending') },
+    { id: 'pending', label: this.lang.t('pending') },
     { id: 'overdue', label: this.lang.t('overdue') },
     { id: 'done', label: this.lang.t('done') },
     { id: 'all', label: this.lang.isGerman() ? 'Alle' : 'All' },
     { id: 'obsolete', label: this.lang.isGerman() ? 'Nicht mehr erforderlich' : 'Obsolete' }
   ]);
 
+  /**
+   * Each single-status chip renders exactly its own real ECAP view's rows — payloads()[VIEW_INDEX[f]]
+   * — never a client-side re-filter across the other views merged together. "All" is the one
+   * deliberate exception: there's no dedicated "My All Acknowledgements" view exposed to this
+   * role (unlike Compliance's "ALL ACKNOWLEDGEMENTS for CUI", which shows everyone, not just this
+   * user, so it can't be reused here), so "All" unions this user's own 4 real views instead.
+   */
   readonly visible = computed(() => {
     const f = this.filter();
-    return this.all()
-      .filter((a) => {
-        const s = a.acknowledgment_picklist_status;
-        if (f === 'all') return true;
-        if (f === 'overdue') return s === 'Overdue';
-        if (f === 'done') return s === 'Done';
-        if (f === 'obsolete') return s === 'Obsolete';
-        return s === 'Pending' || s === 'Overdue';
-      })
-      .sort((a, b) =>
-        ORDER[a.acknowledgment_picklist_status] - ORDER[b.acknowledgment_picklist_status] ||
-        a.acknowledgement_date_deadline_date.localeCompare(b.acknowledgement_date_deadline_date));
+    const rows = f === 'all' ? this.all() : (this.partials()[this.VIEW_INDEX[f]] ?? []);
+    return rows.slice().sort((a, b) =>
+      ORDER[a.acknowledgment_picklist_status] - ORDER[b.acknowledgment_picklist_status] ||
+      a.acknowledgement_date_deadline_date.localeCompare(b.acknowledgement_date_deadline_date));
   });
 
   readonly pagedVisible = computed(() => {

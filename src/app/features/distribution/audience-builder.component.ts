@@ -110,9 +110,8 @@ function isCheckboxActive(val: unknown): boolean {
                     }
                   </small>
                 </div>
-                <label class="switch" [class.switch--locked]="u.includeTeamHierarchy">
-                  <input type="checkbox" class="switch__input" [checked]="u.includeTeamHierarchy"
-                         [disabled]="u.includeTeamHierarchy" (change)="enableHierarchy(u)">
+                <label class="switch switch--locked" [attr.title]="lang.isGerman() ? 'Nur bei Hinzufügen wählbar' : 'Only selectable when adding'">
+                  <input type="checkbox" class="switch__input" [checked]="u.includeTeamHierarchy" disabled>
                   <span class="switch__track" [class.switch__track--on]="u.includeTeamHierarchy">
                     <span class="switch__thumb"></span>
                   </span>
@@ -511,32 +510,6 @@ export class AudienceBuilderComponent {
     this.fetchLinkedOrgUnits().subscribe((units) => {
       this.linkedOrgUnits.set(units);
       this.loadTeamMemberCounts();
-    });
-  }
-
-  /**
-   * One-way: hierarchy inclusion can be switched on for an already-linked team, never back off — turning
-   * it on lets ECAP's server-side rule expand + auto-link descendant teams and create their
-   * acknowledgements, and there is no supported way to unwind that from here. The checkbox is
-   * disabled once true (see template) so this only ever runs on the false → true transition.
-   */
-  enableHierarchy(unit: LinkedOrgUnit): void {
-    if (unit.includeTeamHierarchy) return;
-    this.orgUnitError.set('');
-    this.http.patch<any>(`/networking/solution/ServiceDesk/record/${OBJECT_ID.organizationalUnits}/${unit.recordId}`, {
-      imt_if_check_box_include_team_hierarchy: '1',
-      layout_id: ORGANIZATIONAL_UNIT_LAYOUT_ID,
-      last_modified_timestamp: unit.lastModifiedTimestamp
-    }).subscribe({
-      next: () => {
-        this.linkedOrgUnits.update((units) =>
-          units.map((u) => u.recordId === unit.recordId ? { ...u, includeTeamHierarchy: true } : u));
-        this.loadTeamMemberCounts();
-      },
-      error: (err) => {
-        console.error('Organizational unit hierarchy update failed', err);
-        this.orgUnitError.set(this.lang.isGerman() ? 'Aktualisierung fehlgeschlagen.' : 'Update failed.');
-      }
     });
   }
 
