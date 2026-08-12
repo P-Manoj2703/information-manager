@@ -6,6 +6,7 @@ import { LanguageService } from '@core/i18n/language.service';
 import { DictKey } from '@core/i18n/dictionary';
 import { Role } from '@core/models';
 import { SessionService } from '@core/services/session.service';
+import { PageSubtitleService } from '@core/services/page-subtitle.service';
 import { roleLabel } from '@core/role-labels';
 
 interface NavItem { path: string; key: DictKey; }
@@ -25,6 +26,26 @@ const NAV: Record<Role, NavItem[]> = {
     { path: '/acknowledgements', key: 'acknowledgements' },
     { path: '/monitoring', key: 'monitoring' }
   ]
+};
+
+interface PageHeader { titleKey: DictKey; subtitleDe: string; subtitleEn: string; }
+
+/**
+ * The page title/subtitle now lives in the topbar (left-aligned, alongside the DE/EN toggle on
+ * the right) instead of inside each page's own content — moved here per explicit request so
+ * every top-level list page shows it in the same place. Exact-path match only: sub-pages
+ * (folder detail, template detail, etc.) already have their own in-page back-links/headers and
+ * intentionally show no title here.
+ */
+const PAGE_HEADERS: Record<string, PageHeader> = {
+  '/folders': { titleKey: 'folders', subtitleDe: 'Eigene und Team-Ordner', subtitleEn: 'Own and team folders' },
+  '/estate': { titleKey: 'estate', subtitleDe: 'Alle Informationsmappen im Tenant', subtitleEn: 'All information folders in the tenant' },
+  '/documents': { titleKey: 'documents', subtitleDe: 'Meine zugewiesenen Dokumentversionen', subtitleEn: 'My assigned document versions' },
+  // '/tasks' has no static subtitle here — task-list.component.ts overrides it with real open/overdue counts via PageSubtitleService.
+  '/tasks': { titleKey: 'myAcknowledgements', subtitleDe: '', subtitleEn: '' },
+  '/acknowledgements': { titleKey: 'acknowledgements', subtitleDe: 'Verfolgung auf Personenebene', subtitleEn: 'Person-level tracking' },
+  '/templates': { titleKey: 'templates', subtitleDe: 'Wiederverwendbare Zielgruppen', subtitleEn: 'Reusable audiences' },
+  '/monitoring': { titleKey: 'monitoring', subtitleDe: 'Unternehmensweite Kenntnisnahme-Übersicht und Erinnerungen', subtitleEn: 'Company-wide acknowledgement oversight and reminders' }
 };
 
 @Component({
@@ -71,6 +92,13 @@ const NAV: Record<Role, NavItem[]> = {
       <div class="main">
         @if (showChrome()) {
           <header class="topbar">
+            @if (pageHeader(); as h) {
+              <div class="topbar__title">
+                <h1>{{ lang.t(h.titleKey) }}</h1>
+                <p class="subtitle">{{ pageSubtitle.override() ?? (lang.isGerman() ? h.subtitleDe : h.subtitleEn) }}</p>
+              </div>
+            }
+            <span class="spacer"></span>
             <div class="topbar__lang" role="group" aria-label="Sprache">
               <button type="button" [class.on]="lang.isGerman()" (click)="lang.set('de')">DE</button>
               <button type="button" [class.on]="!lang.isGerman()" (click)="lang.set('en')">EN</button>
@@ -85,6 +113,7 @@ const NAV: Record<Role, NavItem[]> = {
 export class ShellComponent {
   readonly session = inject(SessionService);
   readonly lang = inject(LanguageService);
+  readonly pageSubtitle = inject(PageSubtitleService);
   private readonly router = inject(Router);
   readonly roles: Role[] = ['kenntnissnahmeempfaenger', 'informationsbereitsteller', 'complianceverantwortlicher'];
   readonly nav = computed(() => NAV[this.session.role()]);
@@ -101,6 +130,11 @@ export class ShellComponent {
   );
   readonly showChrome = computed(() =>
     !(this.currentUrl()?.urlAfterRedirects ?? this.router.url).startsWith('/login'));
+
+  readonly pageHeader = computed(() => {
+    const path = (this.currentUrl()?.urlAfterRedirects ?? this.router.url).split('?')[0];
+    return PAGE_HEADERS[path] ?? null;
+  });
 
   readonly initials = computed(() =>
     this.session.session().displayName.split(' ').slice(-1)[0].slice(0, 2).toUpperCase());

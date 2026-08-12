@@ -55,6 +55,7 @@ interface DocRow {
       </ng-container>
     }
 
+
     <p class="note">
       {{ lang.isGerman()
           ? 'Sie sehen ausschließlich Dokumentversionen, für die eine Kenntnisnahme für Sie vorliegt. Datei-Uploads sind für diese Rolle nicht möglich.'

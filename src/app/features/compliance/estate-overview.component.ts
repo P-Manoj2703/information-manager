@@ -52,9 +52,6 @@ interface AckRow {
   standalone: true,
   imports: [RouterLink, RecordListDirective, StatusBadgeComponent, CompletionBarComponent, FilterChipsComponent],
   styles: [`
-    .header { margin-bottom: 22px; }
-    .header h1 { margin: 0; font-size: 22px; font-weight: 700; }
-    .header .subtitle { margin: 4px 0 0; font-size: 13px; color: var(--fg-3); }
     .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
     .bar .spacer { margin-left: auto; }
     .bar .count { font-size: 13px; color: var(--fg-3); }
@@ -82,10 +79,6 @@ interface AckRow {
       (apiResponseEvent)="onAcks($event)" (apiErrorEvent)="onAcksError($event)">
     </ng-container>
 
-    <div class="header">
-      <h1>{{ lang.isGerman() ? 'Bestandsübersicht' : 'Estate overview' }}</h1>
-      <p class="subtitle">{{ lang.isGerman() ? 'Alle Informationsmappen im Tenant' : 'All information folders in the tenant' }}</p>
-    </div>
 
     <div class="bar">
       <im-filter-chips [chips]="chips()" [(value)]="confidentialityFilter" />

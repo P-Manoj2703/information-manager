@@ -67,7 +67,6 @@ const STATUS_OPTIONS: AckStatus[] = ['Pending', 'Overdue', 'Done', 'Obsolete', '
     }
 
     <div class="bar">
-      <h1>{{ lang.isGerman() ? 'Alle Kenntnisnahmen' : 'All acknowledgements' }}</h1>
       <span class="spacer"></span>
       @if (selected().size) {
         <span class="count">{{ selected().size }} {{ lang.isGerman() ? 'ausgewählt' : 'selected' }}</span>

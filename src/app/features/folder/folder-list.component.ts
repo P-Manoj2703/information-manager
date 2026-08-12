@@ -21,9 +21,6 @@ import { PagerComponent } from '@shared/ui/pager.component';
   standalone: true,
   imports: [RouterLink, RecordListDirective, StatusBadgeComponent, CompletionBarComponent, FilterChipsComponent, EmptyStateComponent, ColumnFilterComponent, PagerComponent],
   styles: [`
-    .header { margin-bottom: 22px; }
-    .header h1 { margin: 0; font-size: 22px; font-weight: 700; }
-    .header .subtitle { margin: 4px 0 0; font-size: 13px; color: var(--fg-3); }
     .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
     .bar .spacer { margin-left: auto; }
     .new { background: var(--escriba-teal); color: var(--navy-900); padding: 11px 20px;
@@ -58,11 +55,6 @@ import { PagerComponent } from '@shared/ui/pager.component';
     <ng-container [libEcapRuntimeRecordList]="ackPayload()"
       (apiResponseEvent)="onAcksResponse($event)" (apiErrorEvent)="onAcksError($event)">
     </ng-container>
-
-    <div class="header">
-      <h1>{{ lang.isGerman() ? 'Informationsordner' : 'Information folders' }}</h1>
-      <p class="subtitle">{{ lang.isGerman() ? 'Eigene und Team-Ordner' : 'Own and team folders' }}</p>
-    </div>
 
     <div class="bar">
       <im-filter-chips [chips]="chips()" [value]="view()" (valueChange)="selectView($event)" />

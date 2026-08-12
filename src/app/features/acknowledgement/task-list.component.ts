@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { RecordListDirective, RecordsPayloadMeta, RecordsResponseMeta } from '@escriba/cui-ecap-runtime';
@@ -6,6 +6,7 @@ import { catchError, forkJoin, map, of } from 'rxjs';
 import { AckStatus } from '@core/models';
 import { LanguageService } from '@core/i18n/language.service';
 import { ACKNOWLEDGEMENT_VIEW_ID, OBJECT_ID } from '@core/objects';
+import { PageSubtitleService } from '@core/services/page-subtitle.service';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
 import { FilterChipsComponent, Chip } from '@shared/ui/filter-chips.component';
 import { EmptyStateComponent } from '@shared/ui/empty-state.component';
@@ -54,6 +55,7 @@ interface TaskRow {
     }
 
     <section class="page">
+
       <div class="kpis">
         <div class="kpi"><span class="eyebrow">{{ lang.isGerman() ? 'OFFEN' : 'OPEN' }}</span><strong>{{ counts().open }}</strong></div>
         <div class="kpi kpi--danger"><span class="eyebrow">{{ lang.isGerman() ? 'ÜBERFÄLLIG' : 'OVERDUE' }}</span><strong>{{ counts().overdue }}</strong></div>
@@ -87,6 +89,10 @@ interface TaskRow {
               <a class="btn btn--outline" [routerLink]="['/tasks', a.id, 'receipt']">
                 {{ lang.isGerman() ? 'Quittung ansehen' : 'View receipt' }}
               </a>
+            } @else if (a.acknowledgment_picklist_status === 'Obsolete') {
+              <a class="btn btn--outline" [routerLink]="['/tasks', a.id]">
+                {{ lang.isGerman() ? 'Ansehen' : 'View' }}
+              </a>
             } @else {
               <a class="btn" [routerLink]="['/tasks', a.id]">
                 {{ lang.isGerman() ? 'Öffnen und bestätigen' : 'Open and confirm' }}
@@ -107,13 +113,16 @@ interface TaskRow {
 })
 export class TaskListComponent {
   private readonly http = inject(HttpClient);
+  private readonly pageSubtitle = inject(PageSubtitleService);
+  private readonly destroyRef = inject(DestroyRef);
   readonly lang = inject(LanguageService);
 
   /** Deliberate deviation: the tenant default view is My Completed. */
   readonly filter = signal<string>('open');
 
   readonly payloads = computed<RecordsPayloadMeta[]>(() => [
-    ACKNOWLEDGEMENT_VIEW_ID.myPending, ACKNOWLEDGEMENT_VIEW_ID.myOverdue, ACKNOWLEDGEMENT_VIEW_ID.myCompleted
+    ACKNOWLEDGEMENT_VIEW_ID.myPending, ACKNOWLEDGEMENT_VIEW_ID.myOverdue,
+    ACKNOWLEDGEMENT_VIEW_ID.myCompleted, ACKNOWLEDGEMENT_VIEW_ID.myObsolete
   ].map((id) => ({
     id, object_id: OBJECT_ID.acknowledgement,
     page: 0, pageSize: 100, sortBy: 'date_modified', sortOrder: 'desc',
@@ -133,6 +142,15 @@ export class TaskListComponent {
     }, { allowSignalWrites: true });
 
     effect(() => { this.filter(); this.pageSize(); this.currentPage.set(1); }, { allowSignalWrites: true });
+
+    // Real counts, not static text — the shell topbar shows this in place of its usual static subtitle.
+    effect(() => {
+      const c = this.counts();
+      this.pageSubtitle.set(this.lang.isGerman()
+        ? `${c.open} offen · ${c.overdue} überfällig`
+        : `${c.open} open · ${c.overdue} overdue`);
+    }, { allowSignalWrites: true });
+    this.destroyRef.onDestroy(() => this.pageSubtitle.clear());
   }
 
   onResponse(index: number, response: RecordsResponseMeta): void {
@@ -276,7 +294,8 @@ export class TaskListComponent {
     { id: 'open', label: this.lang.t('pending') },
     { id: 'overdue', label: this.lang.t('overdue') },
     { id: 'done', label: this.lang.t('done') },
-    { id: 'all', label: this.lang.isGerman() ? 'Alle' : 'All' }
+    { id: 'all', label: this.lang.isGerman() ? 'Alle' : 'All' },
+    { id: 'obsolete', label: this.lang.isGerman() ? 'Nicht mehr erforderlich' : 'Obsolete' }
   ]);
 
   readonly visible = computed(() => {
@@ -287,6 +306,7 @@ export class TaskListComponent {
         if (f === 'all') return true;
         if (f === 'overdue') return s === 'Overdue';
         if (f === 'done') return s === 'Done';
+        if (f === 'obsolete') return s === 'Obsolete';
         return s === 'Pending' || s === 'Overdue';
       })
       .sort((a, b) =>
