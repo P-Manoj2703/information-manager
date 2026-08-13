@@ -1,4 +1,4 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, inject } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { catchError, filter, map, of, switchMap } from 'rxjs';
 import { LoggedInUserService } from '@escriba/cui-core';
@@ -14,7 +14,7 @@ const TABS: Record<Role, string[]> = {
   kenntnissnahmeempfaenger: ['tasks', 'documents']
 };
 
-const ROLE_ID_TO_ROLE: Record<string, Role> = {
+export const ROLE_ID_TO_ROLE: Record<string, Role> = {
   [ROLE_ID.informationsbereitsteller]: 'informationsbereitsteller',
   [ROLE_ID.complianceverantwortlicher]: 'complianceverantwortlicher',
   [ROLE_ID.kenntnissnahmeempfaenger]: 'kenntnissnahmeempfaenger'
@@ -27,9 +27,6 @@ export class SessionService {
   private readonly userService = inject(LoggedInUserService);
   private readonly logoutService = inject(LogoutService);
   private readonly lookupService = inject(LookupService);
-
-  /** QA-only override so testers can preview other roles' views without separate ECAP accounts per role. See folder-list/nav usage. */
-  private readonly _roleOverride = signal<Role | null>(null);
 
   /** undefined = still resolving at boot, null = confirmed logged out, object = the real StartPageMeta. */
   private readonly startPage = computed(() => this.userService.userSignal());
@@ -65,7 +62,7 @@ export class SessionService {
     return {
       userId: userData.id ?? '',
       displayName: userData.full_name ?? '',
-      role: this._roleOverride() ?? ROLE_ID_TO_ROLE[appInfo.currentRoleId] ?? FALLBACK_ROLE,
+      role: ROLE_ID_TO_ROLE[appInfo.currentRoleId] ?? FALLBACK_ROLE,
       primaryTeamId: this.primaryTeamId()
     };
   });
@@ -82,14 +79,8 @@ export class SessionService {
   /** No role in this rollout may create/edit users or teams. */
   readonly canEditUsersAndTeams = computed(() => false);
 
-  /** QA-only: preview another role's views without a separate ECAP account. Does not change the real ECAP session. */
-  switchRole(role: Role): void {
-    this._roleOverride.set(role);
-  }
-
   /** Ends the real ECAP session (server-side logout + clears LoggedInUserService), then authGuard sends the router to /login. */
   logout(): void {
-    this._roleOverride.set(null);
     this.logoutService.logout();
   }
 }

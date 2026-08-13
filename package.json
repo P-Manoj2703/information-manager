@@ -1,9 +1,10 @@
 {
-  "name": "information-manager",
+  "name": "information-manager-ui",
   "version": "1.0.0",
   "scripts": {
     "start": "ng serve",
     "build": "ng build",
+    "build:dev":"ng build --base-href=/networking/apps/labs/informationmanagerui/",
     "test": "ng test"
   },
   "private": true,

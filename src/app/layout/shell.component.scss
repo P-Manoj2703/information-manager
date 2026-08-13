@@ -27,7 +27,9 @@
     padding: 7px 12px; border-radius: 8px; font: inherit; font-size: 12px; font-weight: 600;
     color: var(--on-dark-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     &--on { background: var(--escriba-teal); color: var(--navy-900); }
+    &:disabled { opacity: .5; cursor: not-allowed; }
   }
+  &__role-error { margin: 0; font-size: 11px; color: #ff8a8a; line-height: 1.4; }
   &__user { display: flex; align-items: center; gap: 10px; padding-top: 4px; }
   &__avatar {
     width: 32px; height: 32px; border-radius: var(--radius-pill); background: var(--navy-500);

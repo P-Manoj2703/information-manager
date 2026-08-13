@@ -1,0 +1,7 @@
+{
+  "/networking": {
+    "target": "https://labs-dev.ecap-epm.de",
+    "secure": false,
+    "changeOrigin": true
+  }
+}

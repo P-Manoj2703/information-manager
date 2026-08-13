@@ -3,12 +3,23 @@
 html, body {
   margin: 0;
   padding: 0;
+  height: 100%;
+  /* The document itself never scrolls — every page fixes its own height to the viewport and
+     scrolls its own internal panels (.content, .scroll, etc.) instead. Belt-and-suspenders on
+     top of each page's own height:100vh, so the whole page is genuinely fixed, not just sized
+     to fit in the common case. */
+  overflow: hidden;
   background: var(--bg-2);
   color: var(--fg-1);
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.6;
 }
+
+/* Custom elements default to display:inline — im-root (this app's root) staying inline lets
+   its own baseline/line-box metrics add a few stray px below its content, which is exactly
+   enough to make an otherwise-exact height:100vh page (e.g. the login screen) scroll. */
+im-root { display: block; height: 100%; }
 
 h1, h2, h3 { font-weight: 300; letter-spacing: -0.005em; margin: 0; }
 h1 { font-size: 32px; }

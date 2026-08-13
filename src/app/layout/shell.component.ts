@@ -1,13 +1,15 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs';
+import { RoleMeta, RoleSwitchDirective } from '@escriba/cui-ecap-runtime';
 import { LanguageService } from '@core/i18n/language.service';
 import { DictKey } from '@core/i18n/dictionary';
 import { Role } from '@core/models';
-import { SessionService } from '@core/services/session.service';
+import { SessionService, ROLE_ID_TO_ROLE } from '@core/services/session.service';
 import { PageSubtitleService } from '@core/services/page-subtitle.service';
 import { roleLabel } from '@core/role-labels';
+import { DEFAULT_ROUTE } from '@core/default-route';
 
 interface NavItem { path: string; key: DictKey; }
 
@@ -51,7 +53,7 @@ const PAGE_HEADERS: Record<string, PageHeader> = {
 @Component({
   selector: 'im-shell',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, RoleSwitchDirective],
   styleUrl: './shell.component.scss',
   template: `
     <div class="shell">
@@ -70,14 +72,20 @@ const PAGE_HEADERS: Record<string, PageHeader> = {
             }
           </nav>
 
-          <div class="rail__foot">
+          <div class="rail__foot" libEcapRuntimeRoleSwitch #roleSwitch="libEcapRuntimeRoleSwitch"
+               (apiErrorEvent)="onRoleSwitchError($event)">
             <span class="eyebrow">{{ lang.isGerman() ? 'ROLLE WECHSELN' : 'SWITCH ROLE' }}</span>
             <div class="rail__roles">
-              @for (r of roles; track r) {
-                <button type="button" class="rail__role" [class.rail__role--on]="session.role() === r"
-                        (click)="session.switchRole(r)">{{ roleLabel(r) }}</button>
+              @for (r of roleSwitch.roleList; track r.id) {
+                @if (roleFor(r.id); as role) {
+                  <button type="button" class="rail__role" [class.rail__role--on]="!!r.isActive"
+                          [disabled]="roleSwitch.callInProgress" (click)="onRoleClick(roleSwitch, r)">
+                    {{ roleLabel(role) }}
+                  </button>
+                }
               }
             </div>
+            @if (roleSwitchError()) { <p class="rail__role-error">{{ roleSwitchError() }}</p> }
             <div class="rail__user">
               <span class="rail__avatar">{{ initials() }}</span>
               <span class="rail__userName">{{ session.session().displayName }}</span>
@@ -120,8 +128,8 @@ export class ShellComponent {
   readonly lang = inject(LanguageService);
   readonly pageSubtitle = inject(PageSubtitleService);
   private readonly router = inject(Router);
-  readonly roles: Role[] = ['kenntnissnahmeempfaenger', 'informationsbereitsteller', 'complianceverantwortlicher'];
   readonly nav = computed(() => NAV[this.session.role()]);
+  readonly roleSwitchError = signal('');
 
   /**
    * Route-based, not session-based: session.loggedOut() depends on the real
@@ -160,6 +168,39 @@ export class ShellComponent {
     this.session.session().displayName.split(' ').slice(-1)[0].slice(0, 2).toUpperCase());
 
   roleLabel(r: Role): string { return roleLabel(r, this.lang.isGerman()); }
+
+  /**
+   * ECAP's real per-app role assignment (RoleSwitchDirective.roleList) can include roles this
+   * UI has no view for (e.g. 'administrator' — see ROLE_ID's own comment) — only ever offer
+   * the ones this app actually maps to a role, so the switcher can't show a dead option.
+   */
+  roleFor(roleId: string): Role | null {
+    return ROLE_ID_TO_ROLE[roleId] ?? null;
+  }
+
+  /**
+   * Real role switch against ECAP (RoleSwitchDirective.changeRole), not a local override —
+   * it updates the same LoggedInUserService signal SessionService reads, so session.role()
+   * picks up the change on its own. Navigates to the new role's own landing page since the
+   * page currently open may not exist under it (e.g. Recipient has no /folders route).
+   */
+  onRoleClick(roleSwitch: RoleSwitchDirective, r: RoleMeta): void {
+    if (r.isActive || roleSwitch.callInProgress) return;
+    const role = this.roleFor(r.id);
+    if (!role) return;
+    this.roleSwitchError.set('');
+    roleSwitch.changeRole(r.id)
+      .then(() => this.router.navigateByUrl(DEFAULT_ROUTE[role]))
+      .catch((err) => {
+        console.error('Role switch failed', err);
+        this.roleSwitchError.set(this.lang.isGerman() ? 'Rollenwechsel fehlgeschlagen.' : 'Role switch failed.');
+      });
+  }
+
+  onRoleSwitchError(error: unknown): void {
+    console.error('Role switch failed', error);
+    this.roleSwitchError.set(this.lang.isGerman() ? 'Rollenwechsel fehlgeschlagen.' : 'Role switch failed.');
+  }
 
   logout(): void {
     this.session.logout();
