@@ -17,10 +17,15 @@ export class LanguageService {
 
   t(key: DictKey): string { return DICT[key][this._lang() === 'de' ? 0 : 1]; }
 
-  /** ISO dates in tables, German long form in prose. */
+  /**
+   * ISO dates in tables, German long form in prose. English previously passed the raw ISO
+   * string straight through — fine for a date-only value like "2026-08-22", but any full
+   * timestamp ("2026-08-12T07:29:10.000Z") showed its time-of-day and "T"/"Z" separators too,
+   * which no caller of this method ever actually wants. Strips to the date portion for English.
+   */
   date(iso: string): string {
     return this._lang() === 'de'
       ? new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
-      : iso;
+      : iso.split('T')[0];
   }
 }

@@ -22,6 +22,17 @@ interface AckDetailRecord {
 }
 
 /**
+ * documentversion_record's displayValue is the full record_locator ("{folder name} - {version}")
+ * — only the part after the last " - " is the version itself, same parsing already proven for
+ * this same "{name} - {version}" shape in version-timeline.component.ts. Shown as "v-{version}"
+ * rather than the bare version string.
+ */
+function versionLabelOf(displayValue: string | undefined): string {
+  const v = (displayValue ?? '').split(' - ').pop() || '';
+  return v ? `v-${v}` : '';
+}
+
+/**
  * UC-REC-03 / UC-REC-04. The recipient has no update right on the record — the only real
  * state change is completing the BPM "Acknowledge" user task via
  * PUT .../record/tasks/{taskId}/complete, same mechanism already proven for the Distribution
@@ -39,62 +50,66 @@ interface AckDetailRecord {
       <div class="layout">
         <a class="back" routerLink="/tasks">← {{ lang.isGerman() ? 'Zurück zur Liste' : 'Back to list' }}</a>
 
-        <article class="card message">
-          <div class="message__meta">
-            <im-status-badge [status]="a.acknowledgment_picklist_status" />
-            <span class="mono">{{ a.documentVersionLabel }}</span>
-          </div>
-          <h1>{{ a.acknowledgement_textfield_information_folder_name }}</h1>
-          @if (a.acknowledgment_richtextarea_user_information) {
-            <span class="eyebrow">{{ lang.t('messageFrom') }}</span>
-            <div class="richtext" [innerHTML]="a.acknowledgment_richtextarea_user_information"></div>
-          }
-        </article>
+        <div class="col">
+          <article class="card message">
+            <div class="message__meta">
+              <im-status-badge [status]="a.acknowledgment_picklist_status" />
+              <span class="mono">{{ a.documentVersionLabel }}</span>
+            </div>
+            <h1>{{ a.acknowledgement_textfield_information_folder_name }}</h1>
+            @if (a.acknowledgment_richtextarea_user_information) {
+              <span class="eyebrow">{{ lang.t('messageFrom') }}</span>
+              <div class="richtext" [innerHTML]="a.acknowledgment_richtextarea_user_information"></div>
+            }
+          </article>
 
-        <div class="task">
-          @if (a.taskId) {
-            <span class="eyebrow eyebrow--teal">{{ lang.t('yourTask') }}</span>
-            <h2>{{ lang.isGerman() ? 'Bestätigen Sie, dass Sie dieses Dokument gelesen haben.' : 'Confirm that you have read this document.' }}</h2>
-            <dl>
-              <div><dt>{{ lang.t('deadline') }}</dt><dd class="tabular">{{ lang.date(a.acknowledgement_date_deadline_date) }}</dd></div>
-              <div><dt>{{ lang.t('version') }}</dt><dd class="mono">{{ a.documentVersionLabel }}</dd></div>
-              <div><dt>{{ lang.t('status') }}</dt><dd>{{ a.acknowledgment_picklist_status }}</dd></div>
-            </dl>
-            <button type="button" class="confirm" [disabled]="busy()" (click)="confirm(a)">
-              {{ lang.t('confirmButton') }}
-            </button>
-            @if (error()) { <p class="note note--error">{{ error() }}</p> }
-            <p class="note">{{ lang.t('perVersionNote') }}</p>
-          } @else {
-            <span class="eyebrow">{{ lang.isGerman() ? 'LESEANSICHT' : 'READING VIEW' }}</span>
-            <p class="note note--dark">
-              {{ lang.isGerman()
-                  ? 'Für diese Version ist keine Bestätigung (mehr) erforderlich.'
-                  : 'No confirmation is (still) required for this version.' }}
-            </p>
-          }
+          <im-pdf-viewer [versionId]="a.documentVersionId" [canDownloadAll]="true"
+                         [(previewDocId)]="selectedDocId" (documentsChange)="documents.set($event)" />
         </div>
 
-        <im-pdf-viewer [versionId]="a.documentVersionId" [canDownloadAll]="true"
-                       [(previewDocId)]="selectedDocId" (documentsChange)="documents.set($event)" />
-
-        @if (documents().length) {
-          <div class="task doc-picker">
-            <span class="doc-picker__count">
-              {{ documents().length }} {{ lang.isGerman() ? 'Dokumente' : 'documents' }}
-            </span>
-            <ul class="doc-picker__list">
-              @for (d of documents(); track d.id) {
-                <li class="doc-picker__row" [class.doc-picker__row--active]="selectedDocId() === d.id">
-                  <button type="button" class="doc-picker__name" (click)="selectedDocId.set(d.id)">{{ d.name }}</button>
-                  <a class="doc-picker__download" [href]="downloadUrl(a.documentVersionId, d.id)"
-                     [download]="d.name + '.' + d.fileExtension"
-                     [attr.aria-label]="lang.isGerman() ? 'Herunterladen' : 'Download'">⬇</a>
-                </li>
-              }
-            </ul>
+        <div class="col">
+          <div class="task">
+            @if (a.taskId) {
+              <span class="eyebrow eyebrow--teal">{{ lang.t('yourTask') }}</span>
+              <h2>{{ lang.isGerman() ? 'Bestätigen Sie, dass Sie dieses Dokument gelesen haben.' : 'Confirm that you have read this document.' }}</h2>
+              <dl>
+                <div><dt>{{ lang.t('deadline') }}</dt><dd class="tabular">{{ lang.date(a.acknowledgement_date_deadline_date) }}</dd></div>
+                <div><dt>{{ lang.t('version') }}</dt><dd class="mono">{{ a.documentVersionLabel }}</dd></div>
+                <div><dt>{{ lang.t('status') }}</dt><dd>{{ a.acknowledgment_picklist_status }}</dd></div>
+              </dl>
+              <button type="button" class="confirm" [disabled]="busy()" (click)="confirm(a)">
+                {{ lang.t('confirmButton') }}
+              </button>
+              @if (error()) { <p class="note note--error">{{ error() }}</p> }
+              <p class="note">{{ lang.t('perVersionNote') }}</p>
+            } @else {
+              <span class="eyebrow">{{ lang.isGerman() ? 'LESEANSICHT' : 'READING VIEW' }}</span>
+              <p class="note note--dark">
+                {{ lang.isGerman()
+                    ? 'Für diese Version ist keine Bestätigung (mehr) erforderlich.'
+                    : 'No confirmation is (still) required for this version.' }}
+              </p>
+            }
           </div>
-        }
+
+          @if (documents().length) {
+            <div class="task doc-picker">
+              <span class="doc-picker__count">
+                {{ documents().length }} {{ lang.isGerman() ? 'Dokumente' : 'documents' }}
+              </span>
+              <ul class="doc-picker__list">
+                @for (d of documents(); track d.id) {
+                  <li class="doc-picker__row" [class.doc-picker__row--active]="selectedDocId() === d.id">
+                    <button type="button" class="doc-picker__name" (click)="selectedDocId.set(d.id)">{{ d.name }}</button>
+                    <a class="doc-picker__download" [href]="downloadUrl(a.documentVersionId, d.id)"
+                       [download]="d.name + '.' + d.fileExtension"
+                       [attr.aria-label]="lang.isGerman() ? 'Herunterladen' : 'Download'">⬇</a>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </div>
       </div>
     } @else if (!loading()) {
       <p class="missing">{{ lang.isGerman() ? 'Kenntnisnahme nicht gefunden.' : 'Acknowledgement not found.' }}</p>
@@ -149,7 +164,7 @@ export class AckDetailComponent {
           acknowledgement_date_deadline_date: r.acknowledgement_date_deadline_date ?? '',
           acknowledgement_textfield_information_folder_name: r.acknowledgement_textfield_information_folder_name ?? '',
           documentVersionId: r.documentversion_record?.content ?? '',
-          documentVersionLabel: r.documentversion_record?.displayValue ?? '',
+          documentVersionLabel: versionLabelOf(r.documentversion_record?.displayValue),
           acknowledgment_richtextarea_user_information: r.acknowledgment_richtextarea_user_information ?? '',
           taskId: openTask?.id ?? null
         };

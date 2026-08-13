@@ -9,6 +9,7 @@ import { SessionService } from '@core/services/session.service';
 import { SERVER_MESSAGE } from '@core/server-messages';
 import { API_BASE, DOCUMENT_VERSION_ACTIVATE_MACRO_ID, OBJECT_ID } from '@core/objects';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
+import { PdfViewerComponent } from '@features/acknowledgement/pdf-viewer.component';
 import { VersionStatus } from '@core/models/enums';
 
 interface UploadRow { file: File; state: 'queued' | 'uploading' | 'ok' | 'error'; message?: string; documentId?: string; }
@@ -36,7 +37,7 @@ interface DocumentRow { id: string; name: string; fileExtension: string; }
 @Component({
   selector: 'im-version-detail',
   standalone: true,
-  imports: [RouterLink, ReactiveFormsModule, StatusBadgeComponent],
+  imports: [RouterLink, ReactiveFormsModule, StatusBadgeComponent, PdfViewerComponent],
   styleUrl: './version-detail.component.scss',
   template: `
     <a class="back" [routerLink]="['/folders', id()]">← {{ folderName() || id() }}</a>
@@ -125,7 +126,8 @@ interface DocumentRow { id: string; name: string; fileExtension: string; }
                 <li>
                   <span class="kind">{{ d.fileExtension.toUpperCase() }}</span>
                   <span class="meta"><strong>{{ d.name }}</strong></span>
-                  <a class="ghost" [href]="downloadUrl(d.id)" target="_blank" rel="noopener">{{ lang.isGerman() ? 'Öffnen' : 'Open' }}</a>
+                  <button type="button" class="ghost" (click)="previewDocId.set(d.id)">{{ lang.isGerman() ? 'Vorschau' : 'Preview' }}</button>
+                  <a class="ghost" [href]="downloadUrl(d.id)" target="_blank" rel="noopener">{{ lang.isGerman() ? 'Herunterladen' : 'Download' }}</a>
                 </li>
               } @empty {
                 @if (v.version_number_total_document_count > 0) {
@@ -139,6 +141,15 @@ interface DocumentRow { id: string; name: string; fileExtension: string; }
                 }
               }
             </ul>
+          }
+
+          @if (previewDocId()) {
+            <div class="preview-panel">
+              <button type="button" class="ghost close-preview" (click)="previewDocId.set(null)">
+                {{ lang.isGerman() ? 'Vorschau schließen' : 'Close preview' }}
+              </button>
+              <im-pdf-viewer [versionId]="v.id" [(previewDocId)]="previewDocId" [canDownloadAll]="false" />
+            </div>
           }
         </div>
 
@@ -187,6 +198,7 @@ export class VersionDetailComponent {
 
   readonly loading = signal(true);
   readonly documentsLoading = signal(true);
+  readonly previewDocId = signal<string | null>(null);
   private readonly refresh = signal(0);
 
   readonly version = toSignal(
@@ -297,7 +309,7 @@ export class VersionDetailComponent {
           version_date_time_valid_from: r.version_date_time_valid_from || null,
           version_date_time_valid_until: r.version_date_time_valid_until || null,
           version_number_total_document_count: Number(r.version_number_total_document_count || 0),
-          lastModifiedTimestamp: r.date_modified ?? ''
+          lastModifiedTimestamp: r.last_modified_timestamp ?? ''
         };
       }),
       catchError((err) => { console.error('Document version fetch failed', err); return of(null); })

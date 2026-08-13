@@ -6,6 +6,7 @@ import { Observable, catchError, forkJoin, map, of, switchMap } from 'rxjs';
 import { LanguageService } from '@core/i18n/language.service';
 import { OBJECT_ID } from '@core/objects';
 import { PagerComponent } from '@shared/ui/pager.component';
+import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-filter.component';
 
 const DISTRIBUTION_LIST_TEAMS_OBJECT = '4c8a796eb68640e790ceda13abb8e9e1';
 const DISTRIBUTION_LIST_USERS_OBJECT = 'e180bc457fc9435ab8f993f475ad0a9c';
@@ -32,7 +33,7 @@ interface TemplateRow {
 @Component({
   selector: 'im-template-list',
   standalone: true,
-  imports: [RouterLink, PagerComponent],
+  imports: [RouterLink, PagerComponent, ColumnFilterComponent],
   styles: [`
     .bar { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
     .intro { font-size:13px; color:var(--fg-2); max-width:70ch; line-height:1.6; margin:0; }
@@ -71,10 +72,18 @@ interface TemplateRow {
       <table>
         <thead>
           <tr>
-            <th>{{ lang.t('templates') }}</th>
+            <th>
+              <im-column-filter [title]="lang.t('templates')" [options]="nameOptions()" [(selected)]="nameColumnFilter">
+                {{ lang.t('templates') }}
+              </im-column-filter>
+            </th>
             <th>{{ lang.isGerman() ? 'Löst auf zu' : 'Resolves to' }}</th>
             <th>{{ lang.isGerman() ? 'Enthält' : 'Contains' }}</th>
-            <th>{{ lang.isGerman() ? 'Verwendet von' : 'Used by' }}</th>
+            <th>
+              <im-column-filter [title]="lang.isGerman() ? 'Verwendet von' : 'Used by'" [options]="usedByOptions()" [(selected)]="usedByColumnFilter">
+                {{ lang.isGerman() ? 'Verwendet von' : 'Used by' }}
+              </im-column-filter>
+            </th>
             <th></th>
           </tr>
         </thead>
@@ -95,7 +104,11 @@ interface TemplateRow {
               </td>
             </tr>
           } @empty {
-            <tr><td colspan="5" class="empty">{{ lang.isGerman() ? 'Noch keine Verteilervorlagen.' : 'No distribution templates yet.' }}</td></tr>
+            <tr><td colspan="5" class="empty">
+              {{ (nameColumnFilter().length || usedByColumnFilter().length)
+                ? (lang.isGerman() ? 'Keine Vorlagen entsprechen dem Filter.' : 'No templates match this filter.')
+                : (lang.isGerman() ? 'Noch keine Verteilervorlagen.' : 'No distribution templates yet.') }}
+            </td></tr>
           }
         </tbody>
       </table>
@@ -121,7 +134,26 @@ export class TemplateListComponent {
 
   /** Deleted this session — filtered out locally rather than re-running the whole expensive stats fetch. */
   private readonly deletedIds = signal<Set<string>>(new Set());
-  readonly templates = computed(() => this.fetchedTemplates().filter((t) => !this.deletedIds().has(t.id)));
+
+  readonly nameColumnFilter = signal<string[]>([]);
+  readonly usedByColumnFilter = signal<string[]>([]);
+
+  /** Option lists are derived from whatever's actually loaded, not a hardcoded tenant-wide list. */
+  readonly nameOptions = computed<ColumnFilterOption[]>(() =>
+    [...new Set(this.fetchedTemplates().map((t) => t.name))].sort().map((n) => ({ value: n, label: n })));
+  readonly usedByOptions = computed<ColumnFilterOption[]>(() => [
+    { value: 'used', label: this.lang.isGerman() ? 'Verwendet' : 'Used' },
+    { value: 'unused', label: this.lang.isGerman() ? 'Noch nicht verwendet' : 'Not used yet' }
+  ]);
+
+  readonly templates = computed(() => {
+    const nameFilter = this.nameColumnFilter();
+    const usedByFilter = this.usedByColumnFilter();
+    return this.fetchedTemplates()
+      .filter((t) => !this.deletedIds().has(t.id))
+      .filter((t) => !nameFilter.length || nameFilter.includes(t.name))
+      .filter((t) => !usedByFilter.length || usedByFilter.includes(t.usedByCount > 0 ? 'used' : 'unused'));
+  });
 
   readonly deleting = signal<string | null>(null);
   readonly actionError = signal<{ templateId: string; message: string } | null>(null);
@@ -171,7 +203,10 @@ export class TemplateListComponent {
   }
 
   constructor() {
-    effect(() => { this.pageSize(); this.currentPage.set(1); }, { allowSignalWrites: true });
+    effect(() => {
+      this.pageSize(); this.nameColumnFilter(); this.usedByColumnFilter();
+      this.currentPage.set(1);
+    }, { allowSignalWrites: true });
   }
 
   containsText(t: TemplateRow): string {

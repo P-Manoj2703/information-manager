@@ -131,7 +131,9 @@ import { PagerComponent } from '@shared/ui/pager.component';
       </tbody>
     </table>
 
-    @if (!visible().length) {
+    @if (!visible().length && loading()) {
+      <im-empty-state [title]="lang.isGerman() ? 'Wird geladen…' : 'Loading…'" />
+    } @else if (!visible().length) {
       <im-empty-state [title]="lang.isGerman() ? 'Keine Informationsordner in dieser Ansicht' : 'No information folders in this view'"
                       [body]="lang.isGerman() ? 'Wechseln Sie die Ansicht oder legen Sie einen neuen Ordner an.' : 'Switch the view or create a new folder.'" />
     } @else {
@@ -171,6 +173,7 @@ export class FolderListComponent {
     effect(() => {
       const count = this.payloads().length;
       this.folderPartials.set(Array.from({ length: count }, () => []));
+      this.loaded.set(Array.from({ length: count }, () => false));
     }, { allowSignalWrites: true });
 
     // Any change that could shrink or reorder the visible set should land back on page 1 —
@@ -179,6 +182,12 @@ export class FolderListComponent {
       this.view(); this.confidentialityFilter(); this.statusFilter(); this.rollupFilter();
       this.pageSize();
       this.currentPage.set(1);
+    }, { allowSignalWrites: true });
+
+    // A fresh tab gets a fresh retry budget for the flakiness workaround below.
+    effect(() => {
+      this.view();
+      this.emptyRetryCount.set(0);
     }, { allowSignalWrites: true });
   }
 
@@ -253,6 +262,13 @@ export class FolderListComponent {
   /** One slot per payload; merged into `all` below. Reset whenever the set of payloads changes. */
   private readonly folderPartials = signal<InformationFolder[][]>([]);
   private readonly all = computed(() => this.folderPartials().flat());
+  /** One flag per payload — true once that view has responded (success or error) at least once since the last tab switch. */
+  private readonly loaded = signal<boolean[]>([]);
+  readonly loading = computed(() => this.loaded().length === 0 || this.loaded().some((l) => !l));
+
+  private readonly emptyRetryCount = signal(0);
+  private retryScheduled = false;
+  private static readonly MAX_EMPTY_RETRIES = 2;
 
   onFoldersResponse(index: number, response: RecordsResponseMeta): void {
     const mapped = (response.listData?.recordsList ?? []).map((raw) => this.mapFolder(raw));
@@ -261,6 +277,23 @@ export class FolderListComponent {
       next[index] = mapped;
       return next;
     });
+    this.markLoaded(index);
+    // ECAP's list endpoint is confirmed flaky elsewhere in this app (identical repeated requests
+    // sometimes silently return 0 rows despite real data existing) — a short, bounded retry
+    // self-corrects instead of the tab looking permanently empty for a transient hiccup.
+    if (mapped.length === 0 && this.emptyRetryCount() < FolderListComponent.MAX_EMPTY_RETRIES) {
+      this.scheduleEmptyRetry();
+    }
+  }
+
+  private scheduleEmptyRetry(): void {
+    if (this.retryScheduled) return;
+    this.retryScheduled = true;
+    setTimeout(() => {
+      this.retryScheduled = false;
+      this.emptyRetryCount.update((n) => n + 1);
+      this.refreshTick.update((n) => n + 1);
+    }, 600);
   }
 
   onFoldersError(index: number, error: HttpErrorResponse): void {
@@ -268,6 +301,15 @@ export class FolderListComponent {
     this.folderPartials.update((partials) => {
       const next = [...partials];
       next[index] = [];
+      return next;
+    });
+    this.markLoaded(index);
+  }
+
+  private markLoaded(index: number): void {
+    this.loaded.update((flags) => {
+      const next = [...flags];
+      next[index] = true;
       return next;
     });
   }

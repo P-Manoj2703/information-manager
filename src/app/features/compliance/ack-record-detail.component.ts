@@ -26,6 +26,17 @@ interface AckRecord {
 }
 
 /**
+ * documentversion_record's displayValue is the full record_locator ("{folder name} - {version}")
+ * — only the part after the last " - " is the version itself, same parsing already proven for
+ * this same "{name} - {version}" shape in version-timeline.component.ts. Shown as "v-{version}"
+ * rather than the bare version string, same convention as ack-detail.component.ts's own version.
+ */
+function versionLabelOf(displayValue: string | undefined): string {
+  const v = (displayValue ?? '').split(' - ').pop() || '';
+  return v ? `v-${v}` : '';
+}
+
+/**
  * Real record view for a single acknowledgement, reached from the chase table. Fetched via
  * single-record GET (always reliable in this tenant, unlike the generic list endpoint) rather
  * than filtering a bulk fetch — mirrors every other record-detail screen in this app.
@@ -168,7 +179,11 @@ interface AckRecord {
           </div>
         </div>
       } @else if (!loading()) {
-        <p class="missing">{{ lang.isGerman() ? 'Kenntnisnahme nicht gefunden.' : 'Acknowledgement not found.' }}</p>
+        <p class="missing">
+          {{ fetchError()
+            ? fetchError()
+            : (lang.isGerman() ? 'Kenntnisnahme nicht gefunden.' : 'Acknowledgement not found.') }}
+        </p>
       }
     }
   `
@@ -182,6 +197,8 @@ export class AckRecordDetailComponent {
   readonly loading = signal(true);
   readonly busy = signal(false);
   readonly confirmError = signal('');
+  /** The real reason the record fetch came back empty (e.g. a genuine ECAP ACL denial) — shown instead of a generic "not found". */
+  readonly fetchError = signal('');
 
   readonly documents = signal<DocumentRow[]>([]);
   readonly selectedDocId = signal<string | null>(null);
@@ -208,12 +225,24 @@ export class AckRecordDetailComponent {
     { initialValue: null as AckRecord | null }
   );
 
-  /** Same taskId lookup and PUT .../complete call as ack-detail.component.ts's confirm(). */
+  /**
+   * Same taskId lookup and PUT .../complete call as ack-detail.component.ts's confirm().
+   * The record GET returns a normal 200 either way — success carries platform.record plus a
+   * "code":"0" message, a rejection (e.g. real ECAP ACL denial) carries no record at all, just
+   * platform.message with a non-zero code and the real reason (confirmed live: "-1" / "You do
+   * not have permission for this operation") — so that message is read explicitly here rather
+   * than relying on catchError, which a plain 200 response never triggers.
+   */
   private fetchAck(id: string): Observable<AckRecord | null> {
     if (!id) return of(null);
+    this.fetchError.set('');
     return forkJoin({
       record: this.http.get<any>(`/networking/rest/record/${OBJECT_ID.acknowledgement}/${id}`, { params: { alt: 'json' } })
-        .pipe(map((r) => r?.platform?.record ?? null)),
+        .pipe(map((r) => {
+          if (r?.platform?.record) return r.platform.record;
+          this.fetchError.set(r?.platform?.message?.description ?? '');
+          return null;
+        })),
       tasks: this.http.get<any>('/networking/solution/ServiceDesk/CaseRecordPage', {
         params: { id, object_id: OBJECT_ID.acknowledgement, _component_: 'tasksInfo' }
       }).pipe(catchError(() => of(null)))
@@ -229,7 +258,7 @@ export class AckRecordDetailComponent {
           acknowledgment_textfield_employee: r.acknowledgment_textfield_employee ?? '',
           acknowledgement_textfield_information_folder_name: r.acknowledgement_textfield_information_folder_name ?? '',
           documentVersionId: r.documentversion_record?.content ?? '',
-          documentVersionLabel: r.documentversion_record?.displayValue ?? '',
+          documentVersionLabel: versionLabelOf(r.documentversion_record?.displayValue),
           acknowledgement_date_deadline_date: r.acknowledgement_date_deadline_date ?? '',
           // Picklist fields come back as {displayValue, content} objects from this endpoint, not plain strings.
           acknowledgment_picklist_status: (r.acknowledgment_picklist_status?.content ?? 'None') as AckStatus,
@@ -238,7 +267,11 @@ export class AckRecordDetailComponent {
           assignedUserId: r.owner_id?.content ?? r.owner_id?.id ?? ''
         };
       }),
-      catchError((err) => { console.error('Acknowledgement fetch failed', err); return of(null); })
+      catchError((err) => {
+        console.error('Acknowledgement fetch failed', err);
+        this.fetchError.set(err?.error?.platform?.message?.description ?? err?.error?.__exception_msg__ ?? '');
+        return of(null);
+      })
     );
   }
 

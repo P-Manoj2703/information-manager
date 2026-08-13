@@ -12,16 +12,34 @@ import { completion } from '@core/rollup';
 import { canDelete, isFieldEditable } from '@core/folder-rules';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
 import { CompletionBarComponent } from '@shared/ui/completion-bar.component';
+import { MultiSelectDropdownComponent } from '@shared/ui/multi-select-dropdown.component';
 import { SyncDiagnosticsComponent } from './sync-diagnostics.component';
 import { VersionTimelineComponent } from './version-timeline.component';
 import { AudienceBuilderComponent } from '@features/distribution/audience-builder.component';
+
+/**
+ * This generic REST GET endpoint's exact shape for a MULTI_PICK_LIST field isn't confirmed
+ * live yet (unlike picklist/lookup fields, which are confirmed {displayValue, content, ...}
+ * objects here) — handles a plain comma-string (the create-time convention), an array, or an
+ * object exposing one, and never throws on anything else, so a real-world mismatch degrades to
+ * an empty selection instead of crashing the whole folder fetch (and blanking the entire page).
+ */
+function parseDocumentLanguages(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string');
+  if (typeof value === 'string') return value.split(',').map((v) => v.trim()).filter(Boolean);
+  if (value && typeof value === 'object') {
+    const inner = (value as any).content ?? (value as any).displayValue;
+    if (typeof inner === 'string') return inner.split(',').map((v) => v.trim()).filter(Boolean);
+  }
+  return [];
+}
 
 /** UC-IP-07 / UC-ADM-06. Active = frozen; the diagnostic strip explains silence. */
 @Component({
   selector: 'im-folder-detail',
   standalone: true,
   imports: [
-    RouterLink, ReactiveFormsModule, StatusBadgeComponent, CompletionBarComponent,
+    RouterLink, ReactiveFormsModule, StatusBadgeComponent, CompletionBarComponent, MultiSelectDropdownComponent,
     SyncDiagnosticsComponent, VersionTimelineComponent, AudienceBuilderComponent
   ],
   styleUrl: './folder-detail.component.scss',
@@ -34,6 +52,12 @@ import { AudienceBuilderComponent } from '@features/distribution/audience-builde
           <div>
             <im-status-badge [status]="f.information_folder_picklist_status" />
             <h1>{{ f.information_folder_textfield_name }}</h1>
+            <p class="subtitle">
+              {{ f.information_folder_lookup_responsible_team }}
+              · {{ f.information_folder_number_deadlinedays }}-{{ lang.isGerman() ? 'Tage-Frist' : 'day deadline' }}
+              @if (f.created_id) { · {{ lang.isGerman() ? 'Erstellt von' : 'Created by' }} {{ f.created_id }} }
+              @if (f.information_folder_textfield_document_category) { · {{ lang.isGerman() ? 'Kategorie' : 'Category' }} {{ f.information_folder_textfield_document_category }} }
+            </p>
           </div>
           <div class="hero__actions">
             @if (canEditMetadata()) {
@@ -47,19 +71,21 @@ import { AudienceBuilderComponent } from '@features/distribution/audience-builde
             <a class="primary" [routerLink]="['/folders', f.id, 'versions', 'new']">{{ lang.t('newVersion') }}</a>
           </div>
         </div>
-        <im-sync-diagnostics [folderId]="f.id" [refreshTick]="refresh()" />
+        <im-sync-diagnostics [folderId]="f.id" [refreshTick]="refresh()" [deadlineDays]="f.information_folder_number_deadlinedays" />
       </header>
 
-      @if (showAudienceBuilder()) {
-        <im-audience-builder [folderId]="f.id" (continue)="onAudienceUpdated()" />
-      }
-
       @if (frozen()) {
-        <p class="frozen">
-          {{ lang.isGerman()
-            ? 'Dieser Ordner ist veröffentlicht und gesperrt. Nur Frist und Beschreibung sind bearbeitbar — alle weiteren Änderungen erfordern Deaktivieren → Bearbeiten → Aktivieren.'
-            : 'This folder is published and frozen. Only the deadline and description are editable — any further change requires deactivate → edit → activate.' }}
-        </p>
+        <div class="frozen">
+          <span class="frozen__icon">i</span>
+          <div>
+            <strong>{{ lang.isGerman() ? 'Dieser Ordner ist veröffentlicht und gesperrt' : 'This folder is published and frozen' }}</strong>
+            <p>
+              {{ lang.isGerman()
+                ? 'Nur Frist und Beschreibung sind bearbeitbar. Alle weiteren Änderungen erfordern Deaktivieren → Bearbeiten → Aktivieren.'
+                : 'Only the deadline and description are editable. Any further change requires deactivate → edit → activate.' }}
+            </p>
+          </div>
+        </div>
       }
 
       @if (editing()) {
@@ -67,31 +93,52 @@ import { AudienceBuilderComponent } from '@features/distribution/audience-builde
           <h2>{{ lang.isGerman() ? 'Metadaten bearbeiten' : 'Edit metadata' }}</h2>
           @if (saveError()) { <p class="error">{{ saveError() }}</p> }
           <div class="grid">
-            <label>{{ lang.isGerman() ? 'Kurzname' : 'Short name' }}
-              <input [value]="f.information_folder_textfield_short_name ?? ''" disabled>
-            </label>
             <label>{{ lang.isGerman() ? 'Name' : 'Name' }}
               <input [value]="f.information_folder_textfield_name" disabled>
+            </label>
+            <label>{{ lang.isGerman() ? 'Kurzname' : 'Short name' }}
+              <input [value]="f.information_folder_textfield_short_name ?? ''" disabled>
             </label>
             <label>{{ lang.isGerman() ? 'Frist (Tage)' : 'Deadline (days)' }} *
               <input type="number" min="1" formControlName="information_folder_number_deadlinedays">
             </label>
-            <label>{{ lang.isGerman() ? 'Vertraulichkeit' : 'Confidentiality' }}
-              <input [value]="f.information_folder_picklist_confidentiality_level" disabled>
+            <label>{{ lang.isGerman() ? 'Verantwortliches Team' : 'Responsible team' }}
+              @if (canEditWhenInactive()) {
+                <select formControlName="information_folder_lookup_responsible_team">
+                  <option value="" disabled>{{ lang.isGerman() ? 'Bitte wählen' : 'Select a team' }}</option>
+                  @for (t of myTeams(); track t.recordId) {
+                    <option [value]="t.recordId">{{ t.teamName }}</option>
+                  }
+                </select>
+              } @else {
+                <input [value]="f.information_folder_lookup_responsible_team" disabled>
+              }
             </label>
             <label>{{ lang.isGerman() ? 'Dokumentkategorie' : 'Document category' }}
-              <input [value]="f.information_folder_textfield_document_category ?? ''" disabled>
+              <input formControlName="information_folder_textfield_document_category">
+            </label>
+            <label>{{ lang.isGerman() ? 'Vertraulichkeit' : 'Confidentiality level' }}
+              @if (canEditWhenInactive()) {
+                <select formControlName="information_folder_picklist_confidentiality_level">
+                  <option value="Internal">Internal</option>
+                  <option value="Public">Public</option>
+                  <option value="Confidential">Confidential</option>
+                </select>
+              } @else {
+                <input [value]="f.information_folder_picklist_confidentiality_level" disabled>
+              }
+            </label>
+            <label>{{ lang.isGerman() ? 'Beschreibung' : 'Description' }}
+              <textarea rows="3" formControlName="information_folder_textfield_description"></textarea>
+            </label>
+            <label>{{ lang.isGerman() ? 'Dokumentsprache' : 'Document language' }}
+              <im-multi-select-dropdown [options]="documentLanguages()"
+                formControlName="information_folder_multi_select_picklist_document_language" />
             </label>
             <label>{{ lang.isGerman() ? 'Status' : 'Status' }}
               <input [value]="f.information_folder_picklist_status" disabled>
             </label>
-            <label>{{ lang.isGerman() ? 'Verantwortliches Team' : 'Responsible team' }}
-              <input [value]="f.information_folder_lookup_responsible_team" disabled>
-            </label>
           </div>
-          <label class="wide">{{ lang.isGerman() ? 'Beschreibung' : 'Description' }}
-            <textarea rows="3" formControlName="information_folder_textfield_description"></textarea>
-          </label>
           <footer>
             <button type="button" class="ghost-light" (click)="editing.set(false)">{{ lang.isGerman() ? 'Abbrechen' : 'Cancel' }}</button>
             <button type="submit" class="primary-light" [disabled]="editForm.invalid || saving()">
@@ -104,9 +151,19 @@ import { AudienceBuilderComponent } from '@features/distribution/audience-builde
       <div class="cols">
         <section class="card">
           <h2>{{ lang.isGerman() ? 'Abschlussgrad' : 'Completion' }}</h2>
+          <div class="completion-pct">{{ stats().pct }}%</div>
+          <p class="completion-sub">
+            {{ lang.isGerman()
+              ? stats().done + ' von ' + stats().total + ' Personen haben bestätigt · ' + stats().overdue + ' überfällig'
+              : stats().done + ' of ' + stats().total + ' people confirmed · ' + stats().overdue + ' overdue' }}
+          </p>
           <im-completion-bar [data]="stats()" />
+          <h3>{{ lang.isGerman() ? 'Versionsverlauf' : 'Version timeline' }}</h3>
           <im-version-timeline [folderId]="f.id" />
         </section>
+        <im-audience-builder [folderId]="f.id" [compact]="!showAudienceBuilder()"
+                              (continue)="onAudienceUpdated()" (showFullRoster)="showAudienceBuilder.set(true)"
+                              (back)="showAudienceBuilder.set(false)" />
       </div>
     }
   `
@@ -144,6 +201,8 @@ export class FolderDetailComponent {
   readonly canEditMetadata = computed(() => this.session.canCreateFolder() && !!this.folder());
   readonly editButtonLabel = computed(() => this.frozen() ? this.lang.t('editPublished') : (this.lang.isGerman() ? 'Ordner bearbeiten' : 'Edit folder'));
   readonly showDelete = computed(() => { const f = this.folder(); return !!f && canDelete(f); });
+  /** Deactivated folders allow editing everything except short name/name/status — the rest is locked to deadline+description only. */
+  readonly canEditWhenInactive = computed(() => this.folder()?.information_folder_picklist_status === 'Inactive');
   editable(field: Parameters<typeof isFieldEditable>[1]): boolean {
     const f = this.folder();
     return !!f && isFieldEditable(f, field);
@@ -159,14 +218,75 @@ export class FolderDetailComponent {
   readonly saveError = signal('');
   readonly editForm = this.fb.nonNullable.group({
     information_folder_number_deadlinedays: [14, [Validators.required, Validators.min(1)]],
-    information_folder_textfield_description: ['']
+    information_folder_textfield_description: [''],
+    information_folder_picklist_confidentiality_level: ['Internal'],
+    information_folder_textfield_document_category: [''],
+    information_folder_multi_select_picklist_document_language: this.fb.nonNullable.control<string[]>([]),
+    information_folder_lookup_responsible_team: ['']
   });
+  private static readonly EXTENDED_FIELDS = [
+    'information_folder_picklist_confidentiality_level',
+    'information_folder_textfield_document_category',
+    'information_folder_multi_select_picklist_document_language',
+    'information_folder_lookup_responsible_team'
+  ] as const;
+
+  /** Same "teams I belong to" restriction the wizard's own Responsible Team picker uses at creation time. */
+  readonly myTeams = toSignal(
+    toObservable(computed(() => this.session.session().userId)).pipe(
+      switchMap((userId) => {
+        if (!userId) return of([] as { recordId: string; teamName: string }[]);
+        return this.http.get<any>(`/networking/rest/record/${OBJECT_ID.informationManagerTeamsUsers}`, {
+          params: {
+            filter: `(imt_if_text_field_copy_userId equals '${userId}')`,
+            fieldList: 'id,informationmanagerteams_record', pageSize: 50, getTotalRecordCount: true, alt: 'json'
+          }
+        }).pipe(
+          map((response): { recordId: string; teamName: string }[] =>
+            [response?.platform?.record ?? []].flat().map((r: any) => ({
+              recordId: r.id, teamName: r.informationmanagerteams_record?.displayValue ?? ''
+            }))),
+          catchError((err) => { console.error('My teams fetch failed', err); return of([] as { recordId: string; teamName: string }[]); })
+        );
+      })
+    ),
+    { initialValue: [] as { recordId: string; teamName: string }[] }
+  );
+
+  /** Same live enum fetch the wizard's own Document Language field uses — not hardcoded, since this tenant's config is the source of truth. */
+  readonly documentLanguages = toSignal(
+    this.http.get<any>('/networking/solution/ServiceDesk/CaseRecordPage', {
+      params: { object_id: OBJECT_ID.informationFolder, id: '-1', _component_: 'formInfo', alt: 'json' }
+    }).pipe(
+      map((response): string[] => {
+        const sections = response?.formInfo?.sections ?? [];
+        for (const section of sections) {
+          for (const fieldGroup of section.fields ?? []) {
+            for (const fieldList of Object.values(fieldGroup) as any[][]) {
+              const field = fieldList.find((f) => f.tableColumn === 'information_folder_multi_select_picklist_document_language');
+              if (field) return field.sortedEnumerationDetails ?? [];
+            }
+          }
+        }
+        return [];
+      }),
+      catchError((err) => { console.error('Document language field fetch failed', err); return of([] as string[]); })
+    ),
+    { initialValue: [] as string[] }
+  );
 
   startEdit(f: InformationFolder): void {
     this.editForm.setValue({
       information_folder_number_deadlinedays: f.information_folder_number_deadlinedays,
-      information_folder_textfield_description: f.information_folder_textfield_description ?? ''
+      information_folder_textfield_description: f.information_folder_textfield_description ?? '',
+      information_folder_picklist_confidentiality_level: f.information_folder_picklist_confidentiality_level,
+      information_folder_textfield_document_category: f.information_folder_textfield_document_category ?? '',
+      information_folder_multi_select_picklist_document_language: f.information_folder_multi_select_picklist_document_language ?? [],
+      information_folder_lookup_responsible_team: f.responsibleTeamId ?? ''
     });
+    const canEditExtended = f.information_folder_picklist_status === 'Inactive';
+    FolderDetailComponent.EXTENDED_FIELDS.forEach((name) =>
+      canEditExtended ? this.editForm.controls[name].enable() : this.editForm.controls[name].disable());
     this.saveError.set('');
     this.editing.set(true);
   }
@@ -175,8 +295,10 @@ export class FolderDetailComponent {
     if (this.editForm.invalid) return;
     this.saving.set(true);
     this.saveError.set('');
+    const v = this.editForm.getRawValue();
     this.http.put<any>(`/networking/solution/ServiceDesk/record/${OBJECT_ID.informationFolder}/${folderId}`, {
-      ...this.editForm.getRawValue(),
+      ...v,
+      information_folder_multi_select_picklist_document_language: v.information_folder_multi_select_picklist_document_language.join(','),
       last_modified_timestamp: this.lastModifiedTimestamp()
     }).subscribe({
       next: () => {
@@ -200,7 +322,7 @@ export class FolderDetailComponent {
       map((response): InformationFolder | undefined => {
         const r = response?.platform?.record;
         if (!r) return undefined;
-        this.lastModifiedTimestamp.set(r.date_modified ?? '');
+        this.lastModifiedTimestamp.set(r.last_modified_timestamp ?? '');
         return {
           id: r.id,
           information_folder_textfield_name: r.information_folder_textfield_name ?? '',
@@ -215,7 +337,11 @@ export class FolderDetailComponent {
           information_folder_picklist_status: r.information_folder_picklist_status?.content ?? 'Draft',
           information_folder_picklist_acknowledgment_status: r.information_folder_picklist_acknowledgment_status?.content ?? 'None',
           information_folder_number_deadlinedays: Number(r.information_folder_number_deadlinedays ?? 0),
-          information_folder_lookup_responsible_team: r.information_folder_lookup_responsible_team?.displayValue ?? r.information_folder_lookup_responsible_team ?? ''
+          information_folder_lookup_responsible_team: r.information_folder_lookup_responsible_team?.displayValue ?? r.information_folder_lookup_responsible_team ?? '',
+          responsibleTeamId: r.information_folder_lookup_responsible_team?.content ?? '',
+          information_folder_multi_select_picklist_document_language:
+            parseDocumentLanguages(r.information_folder_multi_select_picklist_document_language),
+          created_id: r.created_id?.displayValue ?? ''
         };
       }),
       catchError((err) => { console.error('Folder fetch failed', err); return of(undefined); })

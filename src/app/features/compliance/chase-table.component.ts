@@ -9,6 +9,7 @@ import { LanguageService } from '@core/i18n/language.service';
 import { ACKNOWLEDGEMENT_VIEW_ID, OBJECT_ID } from '@core/objects';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
 import { FilterChipsComponent, Chip } from '@shared/ui/filter-chips.component';
+import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-filter.component';
 import { PagerComponent } from '@shared/ui/pager.component';
 
 /**
@@ -31,7 +32,7 @@ import { PagerComponent } from '@shared/ui/pager.component';
 @Component({
   selector: 'im-chase-table',
   standalone: true,
-  imports: [RouterLink, RecordListDirective, StatusBadgeComponent, FilterChipsComponent, PagerComponent],
+  imports: [RouterLink, RecordListDirective, StatusBadgeComponent, FilterChipsComponent, ColumnFilterComponent, PagerComponent],
   styleUrl: './chase-table.component.scss',
   template: `
     @for (payload of payloads(); track $index) {
@@ -60,10 +61,23 @@ import { PagerComponent } from '@shared/ui/pager.component';
         <table>
           <thead><tr>
             <th>{{ lang.isGerman() ? 'Person' : 'Person' }}</th>
-            <th>{{ lang.isGerman() ? 'Informationsmappe' : 'Information folder' }}</th>
-            <th>{{ lang.t('version') }}</th>
+            <th>
+              <im-column-filter [title]="lang.isGerman() ? 'Informationsmappe' : 'Information folder'"
+                                 [options]="folderOptions()" [(selected)]="folderColumnFilter">
+                {{ lang.isGerman() ? 'Informationsmappe' : 'Information folder' }}
+              </im-column-filter>
+            </th>
+            <th>
+              <im-column-filter [title]="lang.t('version')" [options]="versionOptions()" [(selected)]="versionColumnFilter">
+                {{ lang.t('version') }}
+              </im-column-filter>
+            </th>
             <th>{{ lang.t('deadline') }}</th>
-            <th>{{ lang.t('status') }}</th>
+            <th>
+              <im-column-filter [title]="lang.t('status')" [options]="statusOptions()" [(selected)]="statusColumnFilter">
+                {{ lang.t('status') }}
+              </im-column-filter>
+            </th>
           </tr></thead>
           <tbody>
             @for (a of pagedRows(); track a.id) {
@@ -88,7 +102,11 @@ import { PagerComponent } from '@shared/ui/pager.component';
                 </td>
               </tr>
             } @empty {
-              <tr><td colspan="5" class="empty">{{ lang.isGerman() ? 'Keine Kenntnisnahmen in dieser Ansicht.' : 'No acknowledgements in this view.' }}</td></tr>
+              <tr><td colspan="5" class="empty">
+                {{ loading()
+                  ? (lang.isGerman() ? 'Wird geladen…' : 'Loading…')
+                  : (lang.isGerman() ? 'Keine Kenntnisnahmen in dieser Ansicht.' : 'No acknowledgements in this view.') }}
+              </td></tr>
             }
           </tbody>
         </table>
@@ -147,6 +165,9 @@ export class ChaseTableComponent {
 
   private readonly ackPartials = signal<Acknowledgement[][]>([]);
   private readonly all = computed(() => this.ackPartials().flat());
+  /** One flag per payload — true once that view has responded (success or error) at least once since the last chip switch. */
+  private readonly loaded = signal<boolean[]>([]);
+  readonly loading = computed(() => this.loaded().length === 0 || this.loaded().some((l) => !l));
 
   readonly pageSize = signal(20);
   readonly currentPage = signal(1);
@@ -155,6 +176,7 @@ export class ChaseTableComponent {
     effect(() => {
       const count = this.payloads().length;
       this.ackPartials.set(Array.from({ length: count }, () => []));
+      this.loaded.set(Array.from({ length: count }, () => false));
     }, { allowSignalWrites: true });
 
     // A folder deep-link needs every one of that folder's acknowledgements regardless of
@@ -163,10 +185,18 @@ export class ChaseTableComponent {
       if (this.folderFilter()) this.filter.set('all');
     }, { allowSignalWrites: true });
 
+    // The role switcher (dev/test only) can flip to Compliance while "My User Acknowledgments"
+    // is still selected — that chip no longer renders for this role, so land on "All" instead
+    // of silently keeping a filter the user can no longer see or reselect.
+    effect(() => {
+      if (this.session.role() === 'complianceverantwortlicher' && this.filter() === 'myUser') this.filter.set('all');
+    }, { allowSignalWrites: true });
+
     // Switching chips/page size can shrink or reorder the set — land back on page 1 so the
     // pager never gets stuck past the new last page.
     effect(() => {
       this.filter(); this.pageSize(); this.folderFilter();
+      this.folderColumnFilter(); this.versionColumnFilter(); this.statusColumnFilter();
       this.currentPage.set(1);
     }, { allowSignalWrites: true });
   }
@@ -182,6 +212,7 @@ export class ChaseTableComponent {
       next[index] = mapped;
       return next;
     });
+    this.markLoaded(index);
   }
 
   onAckError(index: number, error: unknown): void {
@@ -189,6 +220,15 @@ export class ChaseTableComponent {
     this.ackPartials.update((partials) => {
       const next = [...partials];
       next[index] = [];
+      return next;
+    });
+    this.markLoaded(index);
+  }
+
+  private markLoaded(index: number): void {
+    this.loaded.update((flags) => {
+      const next = [...flags];
+      next[index] = true;
       return next;
     });
   }
@@ -216,17 +256,49 @@ export class ChaseTableComponent {
     };
   }
 
+  /** "My User Acknowledgments" is Information Provider's own scoped view — Compliance already sees everything via "All", so the chip doesn't apply to that role. */
   readonly chips = computed<Chip[]>(() => [
     { id: 'overdue', label: this.lang.t('overdue') },
     { id: 'pending', label: this.lang.t('pending') },
     { id: 'done', label: this.lang.t('done') },
     { id: 'all', label: this.lang.isGerman() ? 'Alle' : 'All' },
-    { id: 'myUser', label: this.lang.isGerman() ? 'Meine Benutzer-Kenntnisnahmen' : 'My User Acknowledgments' }
+    ...(this.session.role() === 'complianceverantwortlicher'
+      ? []
+      : [{ id: 'myUser', label: this.lang.isGerman() ? 'Meine Benutzer-Kenntnisnahmen' : 'My User Acknowledgments' }])
   ]);
+
+  /** Empty array means "no filter" — every row matches, same convention as im-column-filter's own contract. */
+  readonly folderColumnFilter = signal<string[]>([]);
+  readonly versionColumnFilter = signal<string[]>([]);
+  readonly statusColumnFilter = signal<string[]>([]);
+
+  /** Column filter option lists are derived from whatever's actually loaded, not a hardcoded tenant-wide list. */
+  readonly folderOptions = computed<ColumnFilterOption[]>(() => {
+    const names = [...new Set(this.all().map((a) => a.acknowledgement_textfield_information_folder_name).filter(Boolean))].sort();
+    return names.map((n) => ({ value: n, label: n }));
+  });
+  readonly versionOptions = computed<ColumnFilterOption[]>(() => {
+    const versions = [...new Set(this.all().map((a) => a.documentversion_record).filter(Boolean))].sort();
+    return versions.map((v) => ({ value: v, label: v }));
+  });
+  private readonly STATUS_LABEL: Record<AckStatus, [string, string]> = {
+    None: ['Keine', 'None'], Pending: ['Offen', 'Pending'], Overdue: ['Überfällig', 'Overdue'],
+    Done: ['Erledigt', 'Done'], Obsolete: ['Nicht mehr erforderlich', 'Obsolete']
+  };
+  readonly statusOptions = computed<ColumnFilterOption[]>(() =>
+    (['Overdue', 'Pending', 'Done', 'Obsolete', 'None'] as AckStatus[])
+      .map((s) => ({ value: s, label: this.STATUS_LABEL[s][this.lang.isGerman() ? 0 : 1] })));
 
   readonly rows = computed(() => {
     const folder = this.folderFilter();
-    return folder ? this.all().filter((a) => a.acknowledgement_textfield_information_folder_name === folder) : this.all();
+    const folderCol = this.folderColumnFilter();
+    const versionCol = this.versionColumnFilter();
+    const statusCol = this.statusColumnFilter();
+    return this.all()
+      .filter((a) => !folder || a.acknowledgement_textfield_information_folder_name === folder)
+      .filter((a) => !folderCol.length || folderCol.includes(a.acknowledgement_textfield_information_folder_name))
+      .filter((a) => !versionCol.length || versionCol.includes(a.documentversion_record))
+      .filter((a) => !statusCol.length || statusCol.includes(a.acknowledgment_picklist_status));
   });
 
   readonly pagedRows = computed(() => {

@@ -82,9 +82,6 @@ const PAGE_HEADERS: Record<string, PageHeader> = {
               <span class="rail__avatar">{{ initials() }}</span>
               <span class="rail__userName">{{ session.session().displayName }}</span>
             </div>
-            <button type="button" class="rail__logout" (click)="logout()">
-              {{ lang.isGerman() ? 'Abmelden' : 'Log out' }}
-            </button>
           </div>
         </aside>
       }
@@ -103,6 +100,9 @@ const PAGE_HEADERS: Record<string, PageHeader> = {
               <button type="button" [class.on]="lang.isGerman()" (click)="lang.set('de')">DE</button>
               <button type="button" [class.on]="!lang.isGerman()" (click)="lang.set('en')">EN</button>
             </div>
+            <button type="button" class="topbar__logout" (click)="logout()">
+              {{ lang.isGerman() ? 'Abmelden' : 'Log out' }}
+            </button>
           </header>
         }
         <main class="content"><router-outlet /></main>
@@ -133,6 +133,13 @@ export class ShellComponent {
 
   readonly pageHeader = computed(() => {
     const path = (this.currentUrl()?.urlAfterRedirects ?? this.router.url).split('?')[0];
+    if (/^\/tasks\/[^/]+$/.test(path)) {
+      return {
+        titleKey: 'acknowledgement' as const,
+        subtitleDe: 'Aufgabe aus dem Kenntnisnahme-Abschlussprozess',
+        subtitleEn: 'Task from the Acknowledgment Completion process'
+      };
+    }
     return PAGE_HEADERS[path] ?? null;
   });
 

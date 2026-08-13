@@ -1,5 +1,6 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { Completion } from '@core/rollup';
+import { LanguageService } from '@core/i18n/language.service';
 
 @Component({
   selector: 'im-completion-bar',
@@ -21,14 +22,15 @@ import { Completion } from '@core/rollup';
     </div>
     @if (showLegend()) {
       <div class="legend">
-        <span><i class="swatch done"></i>{{ data().done }}</span>
-        <span><i class="swatch pending"></i>{{ data().pending }}</span>
-        <span><i class="swatch overdue"></i>{{ data().overdue }}</span>
+        <span><i class="swatch done"></i>{{ lang.isGerman() ? 'Erledigt' : 'Done' }} {{ data().done }}</span>
+        <span><i class="swatch pending"></i>{{ lang.isGerman() ? 'Ausstehend' : 'Pending' }} {{ data().pending }}</span>
+        <span><i class="swatch overdue"></i>{{ lang.isGerman() ? 'Überfällig' : 'Overdue' }} {{ data().overdue }}</span>
       </div>
     }
   `
 })
 export class CompletionBarComponent {
+  readonly lang = inject(LanguageService);
   readonly data = input.required<Completion>();
   readonly showLegend = input(true);
   readonly aria = computed(() => `${this.data().pct}% done`);

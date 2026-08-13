@@ -8,6 +8,7 @@ import { LanguageService } from '@core/i18n/language.service';
 import { ACKNOWLEDGEMENT_VIEW_ID, OBJECT_ID } from '@core/objects';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
 import { PagerComponent } from '@shared/ui/pager.component';
+import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-filter.component';
 
 interface DocRow {
   ackId: string;
@@ -16,6 +17,17 @@ interface DocRow {
   versionLabel: string;
   versionId: string;
   status: AckStatus;
+}
+
+/**
+ * documentversion_record's name/displayValue is the full record_locator ("{folder name} -
+ * {version}") — only the part after the last " - " is the version itself, same parsing already
+ * proven for this shape in version-timeline.component.ts. Shown as "v-{version}", same
+ * convention as ack-detail.component.ts's own version label.
+ */
+function versionLabelOf(displayValue: string | undefined): string {
+  const v = (displayValue ?? '').split(' - ').pop() || '';
+  return v ? `v-${v}` : '';
 }
 
 /**
@@ -34,7 +46,7 @@ interface DocRow {
 @Component({
   selector: 'im-my-documents',
   standalone: true,
-  imports: [RouterLink, RecordListDirective, StatusBadgeComponent, PagerComponent],
+  imports: [RouterLink, RecordListDirective, StatusBadgeComponent, PagerComponent, ColumnFilterComponent],
   styles: [`
     .note { background: #fff; border: 1px solid var(--border-1); border-radius: var(--radius-input);
             padding: 12px 16px; font-size: 13px; color: var(--fg-2); margin-bottom: 16px; }
@@ -64,10 +76,28 @@ interface DocRow {
 
     <table>
       <thead><tr>
-        <th>{{ lang.isGerman() ? 'Dokument' : 'Document' }}</th>
-        <th>{{ lang.t('version') }}</th>
-        <th>{{ lang.isGerman() ? 'Gültig ab' : 'Valid from' }}</th>
-        <th>{{ lang.t('status') }}</th>
+        <th>
+          <im-column-filter [title]="lang.isGerman() ? 'Dokument' : 'Document'"
+                             [options]="documentOptions()" [(selected)]="documentColumnFilter">
+            {{ lang.isGerman() ? 'Dokument' : 'Document' }}
+          </im-column-filter>
+        </th>
+        <th>
+          <im-column-filter [title]="lang.t('version')" [options]="versionOptions()" [(selected)]="versionColumnFilter">
+            {{ lang.t('version') }}
+          </im-column-filter>
+        </th>
+        <th>
+          <im-column-filter [title]="lang.isGerman() ? 'Gültig ab' : 'Valid from'"
+                             [options]="validFromOptions()" [(selected)]="validFromColumnFilter">
+            {{ lang.isGerman() ? 'Gültig ab' : 'Valid from' }}
+          </im-column-filter>
+        </th>
+        <th>
+          <im-column-filter [title]="lang.t('status')" [options]="statusOptions()" [(selected)]="statusColumnFilter">
+            {{ lang.t('status') }}
+          </im-column-filter>
+        </th>
         <th></th>
       </tr></thead>
       <tbody>
@@ -86,12 +116,16 @@ interface DocRow {
             <td><a [routerLink]="['/tasks', r.ackId]">{{ lang.isGerman() ? 'PDF öffnen' : 'Open PDF' }}</a></td>
           </tr>
         } @empty {
-          <tr><td colspan="5" class="empty-row">{{ lang.isGerman() ? 'Keine Dokumente zugewiesen.' : 'No documents assigned.' }}</td></tr>
+          <tr><td colspan="5" class="empty-row">
+            {{ loading()
+              ? (lang.isGerman() ? 'Wird geladen…' : 'Loading…')
+              : (lang.isGerman() ? 'Keine Dokumente zugewiesen.' : 'No documents assigned.') }}
+          </td></tr>
         }
       </tbody>
     </table>
-    @if (rows().length) {
-      <im-pager [total]="rows().length" [(page)]="currentPage" [(pageSize)]="pageSize" />
+    @if (filteredRows().length) {
+      <im-pager [total]="filteredRows().length" [(page)]="currentPage" [(pageSize)]="pageSize" />
     }
   `
 })
@@ -109,6 +143,9 @@ export class MyDocumentsComponent {
 
   private readonly ackPartials = signal<DocRow[][]>([[], [], []]);
   readonly rows = computed(() => this.ackPartials().flat());
+  /** One flag per payload — true once that view has responded (success or error) at least once. */
+  private readonly loaded = signal<boolean[]>([false, false, false]);
+  readonly loading = computed(() => this.loaded().some((l) => !l));
 
   private readonly validFromByVersionId = signal<Map<string, string>>(new Map());
   private readonly folderStatusByFolderId = signal<Map<string, FolderStatus>>(new Map());
@@ -122,7 +159,7 @@ export class MyDocumentsComponent {
       ackId: raw.id,
       folderName: raw.acknowledgement_textfield_information_folder_name ?? raw.acknowledgement_lookup_information_folder?.name ?? '',
       folderId: raw.acknowledgement_lookup_information_folder?.id ?? '',
-      versionLabel: raw.documentversion_record?.name ?? raw.documentversion_record ?? '',
+      versionLabel: versionLabelOf(raw.documentversion_record?.name ?? raw.documentversion_record),
       versionId: raw.documentversion_record?.id ?? '',
       status
     }));
@@ -131,6 +168,7 @@ export class MyDocumentsComponent {
       next[index] = mapped;
       return next;
     });
+    this.markLoaded(index);
     this.loadValidFromDates();
     this.loadFolderStatuses();
   }
@@ -140,6 +178,15 @@ export class MyDocumentsComponent {
     this.ackPartials.update((partials) => {
       const next = [...partials];
       next[index] = [];
+      return next;
+    });
+    this.markLoaded(index);
+  }
+
+  private markLoaded(index: number): void {
+    this.loaded.update((flags) => {
+      const next = [...flags];
+      next[index] = true;
       return next;
     });
   }
@@ -152,16 +199,69 @@ export class MyDocumentsComponent {
     return this.folderStatusByFolderId().get(folderId) ?? null;
   }
 
+  /** Empty array means "no filter" — every row matches, same convention as im-column-filter's own contract. */
+  readonly documentColumnFilter = signal<string[]>([]);
+  readonly versionColumnFilter = signal<string[]>([]);
+  readonly validFromColumnFilter = signal<string[]>([]);
+  readonly statusColumnFilter = signal<string[]>([]);
+
+  /** Column filter option lists are derived from whatever's actually loaded, not a hardcoded tenant-wide list. */
+  readonly documentOptions = computed<ColumnFilterOption[]>(() => {
+    const names = [...new Set(this.rows().map((r) => r.folderName).filter(Boolean))].sort();
+    return names.map((n) => ({ value: n, label: n }));
+  });
+  readonly versionOptions = computed<ColumnFilterOption[]>(() => {
+    const versions = [...new Set(this.rows().map((r) => r.versionLabel).filter(Boolean))].sort();
+    return versions.map((v) => ({ value: v, label: v }));
+  });
+  readonly validFromOptions = computed<ColumnFilterOption[]>(() => {
+    const dates = [...new Set(this.rows()
+      .map((r) => this.validFromFor(r.versionId))
+      .filter((d): d is string => !!d)
+      .map((d) => this.lang.date(d)))].sort();
+    return dates.map((d) => ({ value: d, label: d }));
+  });
+  private readonly FOLDER_STATUS_KEY: Record<FolderStatus, 'draft' | 'active' | 'inactive'> = {
+    Draft: 'draft', Active: 'active', Inactive: 'inactive'
+  };
+  readonly statusOptions = computed<ColumnFilterOption[]>(() =>
+    (['Active', 'Draft', 'Inactive'] as FolderStatus[])
+      .map((s) => ({ value: s, label: this.lang.t(this.FOLDER_STATUS_KEY[s]) })));
+
+  readonly filteredRows = computed(() => {
+    const documentCol = this.documentColumnFilter();
+    const versionCol = this.versionColumnFilter();
+    const validFromCol = this.validFromColumnFilter();
+    const statusCol = this.statusColumnFilter();
+    return this.rows()
+      .filter((r) => !documentCol.length || documentCol.includes(r.folderName))
+      .filter((r) => !versionCol.length || versionCol.includes(r.versionLabel))
+      .filter((r) => {
+        if (!validFromCol.length) return true;
+        const validFrom = this.validFromFor(r.versionId);
+        return validFrom ? validFromCol.includes(this.lang.date(validFrom)) : false;
+      })
+      .filter((r) => {
+        if (!statusCol.length) return true;
+        const status = this.folderStatusFor(r.folderId);
+        return status ? statusCol.includes(status) : false;
+      });
+  });
+
   readonly pageSize = signal(20);
   readonly currentPage = signal(1);
 
   readonly pagedRows = computed(() => {
     const start = (this.currentPage() - 1) * this.pageSize();
-    return this.rows().slice(start, start + this.pageSize());
+    return this.filteredRows().slice(start, start + this.pageSize());
   });
 
   constructor() {
-    effect(() => { this.pageSize(); this.currentPage.set(1); }, { allowSignalWrites: true });
+    effect(() => {
+      this.pageSize(); this.documentColumnFilter(); this.versionColumnFilter();
+      this.validFromColumnFilter(); this.statusColumnFilter();
+      this.currentPage.set(1);
+    }, { allowSignalWrites: true });
   }
 
   /** Fetches each unique version's real "valid from" date once rows settle — skips ids already fetched. */

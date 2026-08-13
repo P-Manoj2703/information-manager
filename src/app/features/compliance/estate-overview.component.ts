@@ -105,9 +105,11 @@ interface AckRow {
         </a>
       } @empty {
         <p class="empty">
-          {{ confidentialityFilter() !== 'all'
-            ? (lang.isGerman() ? 'Keine Informationsmappen mit dieser Vertraulichkeit.' : 'No information folders with this confidentiality level.')
-            : (lang.isGerman() ? 'Noch keine Informationsmappen.' : 'No information folders yet.') }}
+          {{ loading()
+            ? (lang.isGerman() ? 'Wird geladen…' : 'Loading…')
+            : confidentialityFilter() !== 'all'
+              ? (lang.isGerman() ? 'Keine Informationsmappen mit dieser Vertraulichkeit.' : 'No information folders with this confidentiality level.')
+              : (lang.isGerman() ? 'Noch keine Informationsmappen.' : 'No information folders yet.') }}
         </p>
       }
     </div>
@@ -128,6 +130,7 @@ export class EstateOverviewComponent {
 
   private readonly foldersSignal = signal<FolderTile[]>([]);
   readonly folders = computed(() => this.foldersSignal());
+  readonly loading = signal(true);
 
   private readonly ackRowsByFolderName = signal<Map<string, AckRow[]>>(new Map());
 
@@ -141,11 +144,13 @@ export class EstateOverviewComponent {
       dateModified: raw.date_modified ?? ''
     }));
     this.foldersSignal.set(mapped);
+    this.loading.set(false);
   }
 
   onFoldersError(error: unknown): void {
     console.error('Failed to load Information Folder records', error);
     this.foldersSignal.set([]);
+    this.loading.set(false);
   }
 
   onAcks(response: RecordsResponseMeta): void {

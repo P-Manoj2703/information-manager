@@ -7,6 +7,7 @@ export const DICT = {
   documents:          ['Dokumente', 'Documents'],
   folders:            ['Informationsordner', 'Information folders'],
   acknowledgements:   ['Kenntnisnahmen', 'Acknowledgements'],
+  acknowledgement:    ['Kenntnisnahme', 'Acknowledgement'],
   templates:          ['Verteilervorlagen', 'Distribution templates'],
   estate:             ['Übersicht', 'Estate overview'],
   users:              ['Benutzer', 'Users'],

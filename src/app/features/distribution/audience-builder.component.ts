@@ -61,6 +61,49 @@ function isCheckboxActive(val: unknown): boolean {
   styleUrl: './audience-builder.component.scss',
   template: `
     <section class="card">
+      @if (compact()) {
+        <div class="summary">
+          <header class="summary__head">
+            <h2>{{ lang.isGerman() ? 'Zielgruppe' : 'Audience' }}</h2>
+            <span class="badge">{{ totalPeople() }} {{ lang.isGerman() ? 'Personen' : 'people' }}</span>
+          </header>
+          @for (u of topLevelOrgUnits(); track u.recordId) {
+            <div class="summary__row">
+              <div>
+                <strong>{{ u.teamName }}</strong>
+                <small>
+                  @if (u.includeTeamHierarchy) {
+                    {{ memberCountFor(u.teamId) }} {{ lang.isGerman() ? 'direkt' : 'direct' }}
+                    @if (subTeamMemberCount(u.teamId)) {
+                      · {{ subTeamMemberCount(u.teamId) }} {{ lang.isGerman() ? 'aus Unterteams' : 'from sub-teams' }}
+                    }
+                  } @else {
+                    {{ memberCountFor(u.teamId) }} {{ lang.isGerman() ? 'Mitglieder' : 'members' }}
+                  }
+                </small>
+              </div>
+              <span class="tag">{{ u.includeTeamHierarchy ? (lang.isGerman() ? 'HIERARCHIE' : 'HIERARCHY') : (lang.isGerman() ? 'ÜBER TEAM' : 'VIA TEAM') }}</span>
+            </div>
+          }
+          @if (linkedEmployees().length) {
+            <div class="summary__row">
+              <div>
+                <strong>{{ linkedEmployees().length }} {{ lang.isGerman() ? 'Einzelpersonen' : 'individual people' }}</strong>
+                <small>{{ lang.isGerman() ? 'Manuell hinzugefügt' : 'Added manually' }}</small>
+              </div>
+              <span class="tag">{{ lang.isGerman() ? 'DIREKT' : 'DIRECT' }}</span>
+            </div>
+          }
+          @if (audienceLoading()) {
+            <p class="hint">{{ lang.isGerman() ? 'Wird geladen…' : 'Loading…' }}</p>
+          } @else if (!topLevelOrgUnits().length && !linkedEmployees().length) {
+            <p class="hint">{{ lang.isGerman() ? 'Noch keine Zielgruppe.' : 'No audience yet.' }}</p>
+          }
+          <button type="button" class="link-btn" (click)="showFullRoster.emit()">
+            {{ lang.isGerman() ? 'Vollständige Liste anzeigen' : 'Show full roster' }}
+          </button>
+        </div>
+      } @else {
       <div class="layout">
         <div class="main">
           <header class="head">
@@ -214,7 +257,12 @@ function isCheckboxActive(val: unknown): boolean {
         </aside>
       </div>
 
-      <footer><button class="primary" (click)="save()">{{ lang.isGerman() ? 'Weiter' : 'Continue' }}</button></footer>
+      <footer>
+        <span class="spacer"></span>
+        <button type="button" class="ghost" (click)="back.emit()">{{ lang.isGerman() ? 'Zurück' : 'Back' }}</button>
+        <button class="primary" (click)="save()">{{ lang.isGerman() ? 'Weiter' : 'Continue' }}</button>
+      </footer>
+      }
     </section>
   `
 })
@@ -223,7 +271,19 @@ export class AudienceBuilderComponent {
   readonly lang = inject(LanguageService);
 
   readonly folderId = input<string>('');
+  /** Read-only summary card (folder-detail's default view) instead of the full editor. */
+  readonly compact = input(false);
   @Output() readonly continue = new EventEmitter<{ teamCount: number; userCount: number }>();
+  /** Navigates back to the Metadata step — this component holds no step-routing logic of its own. */
+  @Output() readonly back = new EventEmitter<void>();
+  /** Compact mode's "Show full roster" — the parent decides what that means (e.g. switching compact off). */
+  @Output() readonly showFullRoster = new EventEmitter<void>();
+
+  readonly totalPeople = computed(() =>
+    this.topLevelOrgUnits().reduce((sum, u) =>
+      sum + this.memberCountFor(u.teamId) + (u.includeTeamHierarchy ? this.subTeamMemberCount(u.teamId) : 0), 0)
+    + this.linkedEmployees().length
+  );
 
   readonly teamQuery = signal('');
   readonly userQuery = signal('');
@@ -263,6 +323,10 @@ export class AudienceBuilderComponent {
   readonly linkedOrgUnits = signal<LinkedOrgUnit[]>([]);
   readonly orgUnitError = signal('');
   readonly orgTeamsLoading = signal(true);
+  private readonly orgUnitsLoaded = signal(false);
+  private readonly employeesLoaded = signal(false);
+  /** True until both the linked org units and linked employees have loaded at least once — guards the compact card's "no audience yet" message. */
+  readonly audienceLoading = computed(() => !this.orgUnitsLoaded() || !this.employeesLoaded());
   /**
    * Information Manager Teams (2a4456b159cc4b2abef60d969dbc72a7) — a custom object that
    * mirrors the system Team tree, and is the real lookup target of
@@ -405,8 +469,29 @@ export class AudienceBuilderComponent {
     return this.descendantsOf(teamId).filter((c) => linkedTeamIds.has(c.id));
   }
 
-  /** teamId -> real member count, from the same Teams x Users junction object used for folder-wizard's "My Team" fetch. */
-  private readonly teamMemberCounts = signal<Map<string, number>>(new Map());
+  /**
+   * teamId -> real member count. One paginated fetch of the whole Teams x Users junction
+   * object, counted client-side, instead of one filtered count-only request per team —
+   * adding a hierarchy-enabled team can expand into dozens of descendant rows, and firing
+   * that many individual requests (throttled by the browser's per-origin connection cap)
+   * made every add visibly slow. This tenant's junction object is small enough tenant-wide
+   * that fetching it all once is cheap by comparison.
+   */
+  private readonly allTeamLinks = toSignal(
+    this.fetchAllPaged<{ id: string; teamId: string }>(
+      OBJECT_ID.informationManagerTeamsUsers,
+      'id,informationmanagerteams_record',
+      (r) => ({ id: r.id, teamId: r.informationmanagerteams_record?.content ?? r.informationmanagerteams_record?.id ?? '' }),
+      200
+    ),
+    { initialValue: [] as { id: string; teamId: string }[] }
+  );
+
+  private readonly teamMemberCounts = computed(() => {
+    const map = new Map<string, number>();
+    this.allTeamLinks().forEach((r) => map.set(r.teamId, (map.get(r.teamId) ?? 0) + 1));
+    return map;
+  });
 
   memberCountFor(teamId: string): number {
     return this.teamMemberCounts().get(teamId) ?? 0;
@@ -415,44 +500,6 @@ export class AudienceBuilderComponent {
   /** Sum of each linked descendant's own direct count — matches "N from sub-teams" in the design. */
   subTeamMemberCount(teamId: string): number {
     return this.linkedDescendantsOf(teamId).reduce((sum, c) => sum + this.memberCountFor(c.id), 0);
-  }
-
-  /**
-   * Real per-team member count via a filtered, count-only query against the junction object —
-   * pageSize 1 since only totalRecordCount is needed, not the rows themselves. Filtering by an
-   * exact value (rather than fetching the object unfiltered) is the mitigation already proven
-   * reliable for this same object elsewhere in the app.
-   */
-  private fetchTeamMemberCount(teamId: string): Observable<{ id: string; count: number }> {
-    return this.http.get<any>(`/networking/rest/record/${OBJECT_ID.informationManagerTeamsUsers}`, {
-      params: {
-        filter: `(informationmanagerteams_record equals '${teamId}')`,
-        fieldList: 'id', pageSize: 1, getTotalRecordCount: true, alt: 'json'
-      }
-    }).pipe(
-      map((response) => ({ id: teamId, count: Number(response?.platform?.totalRecordCount ?? 0) })),
-      catchError((err) => { console.error('Team member count fetch failed', teamId, err); return of({ id: teamId, count: 0 }); })
-    );
-  }
-
-  /** Fetches counts for every team currently shown (top-level rows + their linked descendants), skipping ones already known. */
-  private loadTeamMemberCounts(): void {
-    const known = this.teamMemberCounts();
-    const ids = new Set<string>();
-    this.linkedOrgUnits().forEach((u) => {
-      ids.add(u.teamId);
-      if (u.includeTeamHierarchy) this.linkedDescendantsOf(u.teamId).forEach((c) => ids.add(c.id));
-    });
-    const toFetch = [...ids].filter((id) => id && !known.has(id));
-    if (!toFetch.length) return;
-
-    forkJoin(toFetch.map((id) => this.fetchTeamMemberCount(id))).subscribe((results) => {
-      this.teamMemberCounts.update((map) => {
-        const next = new Map(map);
-        results.forEach(({ id, count }) => next.set(id, count));
-        return next;
-      });
-    });
   }
 
   constructor() {
@@ -489,7 +536,11 @@ export class AudienceBuilderComponent {
     return this.http.get<any>(`/networking/rest/record/${OBJECT_ID.organizationalUnits}`, {
       params: {
         filter: `(informationfolder_record equals '${folderId}')`,
-        fieldList: 'id,informationmanagerteams_record,imt_if_check_box_include_team_hierarchy,date_modified',
+        // last_modified_timestamp deliberately left out — requesting it 400s this object's
+        // list query outright (confirmed live, same issue found on Distribution_List_Teams),
+        // and it's never actually used for a write here (hierarchy is locked/view-only on
+        // this component's own rows).
+        fieldList: 'id,informationmanagerteams_record,imt_if_check_box_include_team_hierarchy',
         alt: 'json'
       }
     }).pipe(
@@ -499,7 +550,7 @@ export class AudienceBuilderComponent {
           teamId: r.informationmanagerteams_record?.content ?? r.informationmanagerteams_record?.id ?? '',
           teamName: r.informationmanagerteams_record?.displayValue ?? '',
           includeTeamHierarchy: isCheckboxActive(r.imt_if_check_box_include_team_hierarchy),
-          lastModifiedTimestamp: r.date_modified ?? ''
+          lastModifiedTimestamp: ''
         }))),
       catchError((err) => { console.error('Organizational units fetch failed', err); return of([] as LinkedOrgUnit[]); })
     );
@@ -509,7 +560,7 @@ export class AudienceBuilderComponent {
   loadLinkedOrgUnits(): void {
     this.fetchLinkedOrgUnits().subscribe((units) => {
       this.linkedOrgUnits.set(units);
-      this.loadTeamMemberCounts();
+      this.orgUnitsLoaded.set(true);
     });
   }
 
@@ -539,7 +590,7 @@ export class AudienceBuilderComponent {
       },
       error: (err) => {
         console.error('Organizational unit create failed', err);
-        this.orgUnitError.set(this.lang.isGerman() ? 'Hinzufügen fehlgeschlagen.' : 'Add failed.');
+        this.orgUnitError.set(err?.error?.__exception_msg__ ?? (this.lang.isGerman() ? 'Hinzufügen fehlgeschlagen.' : 'Add failed.'));
       }
     });
   }
@@ -549,7 +600,7 @@ export class AudienceBuilderComponent {
       next: () => this.linkedOrgUnits.update((units) => units.filter((u) => u.recordId !== recordId)),
       error: (err) => {
         console.error('Organizational unit delete failed', err);
-        this.orgUnitError.set(this.lang.isGerman() ? 'Entfernen fehlgeschlagen.' : 'Remove failed.');
+        this.orgUnitError.set(err?.error?.__exception_msg__ ?? (this.lang.isGerman() ? 'Entfernen fehlgeschlagen.' : 'Remove failed.'));
       }
     });
   }
@@ -577,7 +628,10 @@ export class AudienceBuilderComponent {
 
   /** GET the real Employees rows (Folder<->User links) already linked to this folder. */
   loadLinkedEmployees(): void {
-    this.fetchLinkedEmployees().subscribe((employees) => this.linkedEmployees.set(employees));
+    this.fetchLinkedEmployees().subscribe((employees) => {
+      this.linkedEmployees.set(employees);
+      this.employeesLoaded.set(true);
+    });
   }
 
   /** Creates the real Employees child record — ECAP's own server-side rule then creates that user's acknowledgement. */
@@ -600,7 +654,7 @@ export class AudienceBuilderComponent {
       },
       error: (err) => {
         console.error('Employee create failed', err);
-        this.employeeError.set(this.lang.isGerman() ? 'Hinzufügen fehlgeschlagen.' : 'Add failed.');
+        this.employeeError.set(err?.error?.__exception_msg__ ?? (this.lang.isGerman() ? 'Hinzufügen fehlgeschlagen.' : 'Add failed.'));
       }
     });
   }
@@ -610,7 +664,7 @@ export class AudienceBuilderComponent {
       next: () => this.linkedEmployees.update((employees) => employees.filter((e) => e.recordId !== recordId)),
       error: (err) => {
         console.error('Employee delete failed', err);
-        this.employeeError.set(this.lang.isGerman() ? 'Entfernen fehlgeschlagen.' : 'Remove failed.');
+        this.employeeError.set(err?.error?.__exception_msg__ ?? (this.lang.isGerman() ? 'Entfernen fehlgeschlagen.' : 'Remove failed.'));
       }
     });
   }
@@ -634,10 +688,10 @@ export class AudienceBuilderComponent {
     this.templateApplying.set(true);
 
     this.http.get<any>(`/networking/rest/record/${OBJECT_ID.informationFolder}/${folderId}`, {
-      params: { fieldList: 'date_modified', alt: 'json' }
+      params: { fieldList: 'last_modified_timestamp', alt: 'json' }
     }).pipe(
       switchMap((folderResponse) => {
-        const lastModifiedTimestamp = folderResponse?.platform?.record?.date_modified ?? '';
+        const lastModifiedTimestamp = folderResponse?.platform?.record?.last_modified_timestamp ?? '';
         return this.http.put<any>(
           `/networking/solution/ServiceDesk/record/${OBJECT_ID.informationFolder}/${folderId}`,
           { information_folder_lu_distribution_list: templateId, last_modified_timestamp: lastModifiedTimestamp }
@@ -672,7 +726,6 @@ export class AudienceBuilderComponent {
           this.templateApplying.set(false);
           this.linkedOrgUnits.set(units);
           this.linkedEmployees.set(employees);
-          this.loadTeamMemberCounts();
 
           const newOrgUnitIds = units.map((u) => u.recordId).filter((id) => !beforeOrgUnitIds.has(id));
           const newEmployeeIds = employees.map((e) => e.recordId).filter((id) => !beforeEmployeeIds.has(id));

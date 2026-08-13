@@ -1,4 +1,4 @@
-import { Component, inject, input, signal } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { toSignal, toObservable } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
@@ -33,7 +33,9 @@ import { ActivateDialogComponent } from './activate-dialog.component';
     } @else {
       <im-activate-dialog [folderId]="id()" [versionId]="versionRecordId()"
                            [teamCount]="orgUnitCount()" [userCount]="userCount()"
-                           [deadlineDays]="14" [supersedes]="activeVersionLabel()" />
+                           [confidentialityLevel]="confidentialityLevel()"
+                           [deadlineDays]="14" [supersedes]="activeVersionLabel()" [supersededConfirmedCount]="supersededConfirmedCount()"
+                           (back)="versionRecordId.set('')" />
     }
   `
 })
@@ -58,10 +60,22 @@ export class VersionFormComponent {
     { initialValue: 0 }
   );
 
-  /** Best-effort — the current Active version's own version id, shown in the "will be deactivated" warning. */
-  readonly activeVersionLabel = toSignal(
-    toObservable(this.id).pipe(switchMap((folderId) => this.fetchActiveVersionLabel(folderId))),
-    { initialValue: null as string | null }
+  readonly confidentialityLevel = toSignal(
+    toObservable(this.id).pipe(switchMap((folderId) => this.fetchConfidentialityLevel(folderId))),
+    { initialValue: '' }
+  );
+
+  /** Best-effort — the current Active version's own id + label, shown in the "will be deactivated" warning. */
+  private readonly activeVersion = toSignal(
+    toObservable(this.id).pipe(switchMap((folderId) => this.fetchActiveVersion(folderId))),
+    { initialValue: null as { id: string; label: string } | null }
+  );
+  readonly activeVersionLabel = computed(() => this.activeVersion()?.label ?? null);
+
+  /** How many people already confirmed the version about to be superseded — they get asked again. */
+  readonly supersededConfirmedCount = toSignal(
+    toObservable(this.activeVersion).pipe(switchMap((v) => v ? this.fetchConfirmedCount(v.id) : of(0))),
+    { initialValue: 0 }
   );
 
   onVersionSaved(versionId: string): void {
@@ -75,6 +89,16 @@ export class VersionFormComponent {
     }).pipe(
       map((response) => response?.platform?.record?.information_folder_textfield_name ?? ''),
       catchError((err) => { console.error('Folder name fetch failed', err); return of(''); })
+    );
+  }
+
+  private fetchConfidentialityLevel(folderId: string) {
+    if (!folderId) return of('');
+    return this.http.get<any>(`/networking/rest/record/${OBJECT_ID.informationFolder}/${folderId}`, {
+      params: { fieldList: 'information_folder_picklist_confidentiality_level', alt: 'json' }
+    }).pipe(
+      map((response) => response?.platform?.record?.information_folder_picklist_confidentiality_level?.content ?? ''),
+      catchError((err) => { console.error('Confidentiality level fetch failed', err); return of(''); })
     );
   }
 
@@ -96,8 +120,8 @@ export class VersionFormComponent {
    * rest/record/{oid}?filter=... list endpoint, which proved unreliable for this exact
    * object/folder combination independent of retries or page size.
    */
-  private fetchActiveVersionLabel(folderId: string) {
-    if (!folderId) return of(null as string | null);
+  private fetchActiveVersion(folderId: string) {
+    if (!folderId) return of(null as { id: string; label: string } | null);
     return this.http.get<any>('/networking/solution/ServiceDesk/relatedObjectList', {
       params: {
         record_id: folderId, p_objectId: OBJECT_ID.informationFolder,
@@ -108,9 +132,24 @@ export class VersionFormComponent {
       map((response) => {
         const rows = response?.[INFORMATION_FOLDER_VERSIONS_SECTION_ID]?.relatedInfoData ?? [];
         const active = rows.find((r: any) => r.version_picklist_version_status === 'Active');
-        return active ? (active.record_locator ?? '').split(' - ').pop() || active.id : null;
+        if (!active) return null;
+        return { id: active.id, label: (active.record_locator ?? '').split(' - ').pop() || active.id };
       }),
-      catchError((err) => { console.error('Active version lookup failed', err); return of(null as string | null); })
+      catchError((err) => { console.error('Active version lookup failed', err); return of(null as { id: string; label: string } | null); })
+    );
+  }
+
+  /** Counts Acknowledgement rows already at 'Done' for the version about to be superseded — those recipients get asked again. */
+  private fetchConfirmedCount(versionId: string) {
+    return this.http.get<any>(`/networking/rest/record/${OBJECT_ID.acknowledgement}`, {
+      params: {
+        filter: `(documentversion_record equals '${versionId}')`,
+        fieldList: 'acknowledgment_picklist_status', pageSize: 500, alt: 'json'
+      }
+    }).pipe(
+      map((response) => [response?.platform?.record ?? []].flat()
+        .filter((r: any) => r.acknowledgment_picklist_status === 'Done').length),
+      catchError((err) => { console.error('Confirmed count fetch failed', err); return of(0); })
     );
   }
 }

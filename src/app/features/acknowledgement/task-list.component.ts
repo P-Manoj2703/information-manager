@@ -27,6 +27,17 @@ interface TaskRow {
 }
 
 /**
+ * documentversion_record's name/displayValue is the full record_locator ("{folder name} -
+ * {version}") — only the part after the last " - " is the version itself, same parsing already
+ * proven for this shape in version-timeline.component.ts. Shown as "v-{version}", same
+ * convention as ack-detail.component.ts's own version label.
+ */
+function versionLabelOf(displayValue: string | undefined): string {
+  const v = (displayValue ?? '').split(' - ').pop() || '';
+  return v ? `v-${v}` : '';
+}
+
+/**
  * The Information Receiver's own "My tasks" list — real ECAP data via the same
  * libEcapRuntimeRecordList + real saved-view mechanism already proven for the compliance
  * chase table (My Pending/My Overdue/My Completed Acknowledgments). The generic
@@ -100,8 +111,12 @@ interface TaskRow {
             }
           </li>
         } @empty {
-          <im-empty-state [title]="lang.isGerman() ? 'Nichts zu tun' : 'Nothing to do'"
-                          [body]="lang.isGerman() ? 'Sie haben in dieser Ansicht keine offenen Kenntnisnahmen.' : 'You have no outstanding acknowledgements in this view.'" />
+          @if (loading()) {
+            <im-empty-state [title]="lang.isGerman() ? 'Wird geladen…' : 'Loading…'" />
+          } @else {
+            <im-empty-state [title]="lang.isGerman() ? 'Nichts zu tun' : 'Nothing to do'"
+                            [body]="lang.isGerman() ? 'Sie haben in dieser Ansicht keine offenen Kenntnisnahmen.' : 'You have no outstanding acknowledgements in this view.'" />
+          }
         }
       </ul>
 
@@ -134,6 +149,9 @@ export class TaskListComponent {
 
   private readonly partials = signal<TaskRow[][]>([]);
   private readonly all = computed(() => this.partials().flat());
+  /** One flag per payload — true once that view has responded (success or error) at least once. */
+  private readonly loaded = signal<boolean[]>([]);
+  readonly loading = computed(() => this.loaded().length === 0 || this.loaded().some((l) => !l));
 
   readonly pageSize = signal(20);
   readonly currentPage = signal(1);
@@ -142,6 +160,7 @@ export class TaskListComponent {
     effect(() => {
       const count = this.payloads().length;
       this.partials.set(Array.from({ length: count }, () => []));
+      this.loaded.set(Array.from({ length: count }, () => false));
     }, { allowSignalWrites: true });
 
     effect(() => { this.filter(); this.pageSize(); this.currentPage.set(1); }, { allowSignalWrites: true });
@@ -161,7 +180,7 @@ export class TaskListComponent {
       id: raw.id,
       // ListDataPage's real shape: picklists as plain strings, lookups as {name, id} — not the generic REST endpoint's {displayValue, content} shape.
       acknowledgment_picklist_status: (raw.acknowledgment_picklist_status ?? 'None') as AckStatus,
-      documentVersionLabel: raw.documentversion_record?.name ?? raw.documentversion_record ?? '',
+      documentVersionLabel: versionLabelOf(raw.documentversion_record?.name ?? raw.documentversion_record),
       documentVersionId: raw.documentversion_record?.id ?? '',
       acknowledgement_date_deadline_date: raw.acknowledgement_date_deadline_date ?? '',
       folderName: raw.acknowledgement_textfield_information_folder_name ?? raw.acknowledgement_lookup_information_folder?.name ?? '',
@@ -172,6 +191,7 @@ export class TaskListComponent {
       next[index] = mapped;
       return next;
     });
+    this.markLoaded(index);
     this.loadAckExtras();
     this.loadFolderCategories();
     this.loadValidFromDates();
@@ -182,6 +202,15 @@ export class TaskListComponent {
     this.partials.update((partials) => {
       const next = [...partials];
       next[index] = [];
+      return next;
+    });
+    this.markLoaded(index);
+  }
+
+  private markLoaded(index: number): void {
+    this.loaded.update((flags) => {
+      const next = [...flags];
+      next[index] = true;
       return next;
     });
   }

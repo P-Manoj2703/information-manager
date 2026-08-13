@@ -23,9 +23,10 @@
 .card {
   background: #fff; border: 1px solid var(--border-1); border-radius: var(--radius-card);
   padding: 28px 32px; display: flex; flex-direction: column; gap: 22px; max-width: 1080px;
-  h2 { margin: 0; font-size: 20px; font-weight: 300; }
+  h2 { margin: 0; font-size: 20px; font-weight: 300; color: var(--fg-2);
+    .step-num { color: var(--escriba-teal-700); font-weight: 700; } }
 }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px 24px; }
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px 24px; }
 .error { margin: 0; font-size: 13px; color: var(--danger, #c0392b); }
 
 label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }

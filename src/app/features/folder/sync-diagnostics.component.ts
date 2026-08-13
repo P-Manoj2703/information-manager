@@ -1,4 +1,4 @@
-import { Component, inject, input } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { toSignal, toObservable } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, combineLatest, map, of, switchMap } from 'rxjs';
@@ -43,17 +43,26 @@ interface ActiveVersion { id: string; versionLabel: string; dateModified: string
         </span>
       </div>
       <div class="cell">
-        <span class="label">{{ lang.isGerman() ? 'ZIELGRUPPE' : 'TARGET GROUP' }}</span>
-        <span class="value">{{ acks().length }}</span>
+        <span class="label">{{ lang.isGerman() ? 'ZIELGRUPPE' : 'AUDIENCE' }}</span>
+        <span class="value">{{ acks().length }} {{ lang.isGerman() ? 'Personen' : 'people' }}</span>
         <span class="note">
           {{ orgUnitCount() }} {{ lang.isGerman() ? 'Teams' : 'teams' }} · {{ userCount() }} {{ lang.isGerman() ? 'direkt' : 'direct' }}
         </span>
       </div>
       <div class="cell">
-        <span class="label">{{ lang.isGerman() ? 'KENNTNISNAHMEN' : 'ACKNOWLEDGEMENT' }}</span>
+        <span class="label">{{ lang.isGerman() ? 'KENNTNISNAHMEN' : 'ACKNOWLEDGEMENTS' }}</span>
         <span class="value" [class.bad]="stats().overdue > 0">{{ acks().length }}</span>
         <span class="note">
-          {{ stats().done }} {{ lang.isGerman() ? 'erledigt' : 'completed' }} · {{ stats().overdue }} {{ lang.isGerman() ? 'überfällig' : 'overdue' }}
+          {{ stats().done }} {{ lang.isGerman() ? 'erledigt' : 'done' }} · {{ stats().overdue }} {{ lang.isGerman() ? 'überfällig' : 'overdue' }}
+        </span>
+      </div>
+      <div class="cell">
+        <span class="label">{{ lang.isGerman() ? 'FRIST' : 'DEADLINE' }}</span>
+        <span class="value">{{ dueDate() ? lang.date(dueDate()!) : '—' }}</span>
+        <span class="note">
+          {{ activeVersion()?.dateModified
+            ? (lang.isGerman() ? 'seit ' : 'since ') + lang.date(activeVersion()!.dateModified!) + ', ' + deadlineDays() + (lang.isGerman() ? ' Tage' : ' days')
+            : '' }}
         </span>
       </div>
     </div>
@@ -65,6 +74,7 @@ export class SyncDiagnosticsComponent {
   readonly folderId = input.required<string>();
   /** Bump to force a refetch — e.g. right after adding a user/org unit, so these stats don't wait for a full page reload. */
   readonly refreshTick = input(0);
+  readonly deadlineDays = input(0);
 
   private readonly folderId$ = toObservable(this.folderId);
   private readonly refresh$ = toObservable(this.refreshTick);
@@ -73,6 +83,15 @@ export class SyncDiagnosticsComponent {
     combineLatest([this.folderId$, this.refresh$]).pipe(switchMap(([folderId]) => this.fetchActiveVersion(folderId))),
     { initialValue: null as ActiveVersion | null }
   );
+
+  /** The real due date: the active version's own start date plus the folder's deadline — not a separate stored field. */
+  readonly dueDate = computed(() => {
+    const start = this.activeVersion()?.dateModified;
+    if (!start) return null;
+    const d = new Date(start);
+    d.setDate(d.getDate() + this.deadlineDays());
+    return d.toISOString().slice(0, 10);
+  });
 
   readonly acks = toSignal(
     combineLatest([this.folderId$, this.refresh$]).pipe(

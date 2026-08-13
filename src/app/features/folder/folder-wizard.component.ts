@@ -46,37 +46,21 @@ import { ActivateDialogComponent } from './activate-dialog.component';
 
     @if (visitedSteps().has(1)) {
         <form class="card" [style.display]="step() === 1 ? null : 'none'" [formGroup]="form" (ngSubmit)="saveDraft()">
-          <h2>{{ lang.isGerman() ? 'Metadaten' : 'Metadata' }}</h2>
+          <h2><span class="step-num">1</span> · {{ lang.isGerman() ? 'Metadaten' : 'Metadata' }}</h2>
 
           @if (createError()) {
             <p class="error">{{ createError() }}</p>
           }
           <div class="grid">
-            <label>{{ lang.isGerman() ? 'Kurzname' : 'Short name' }}
-              <input formControlName="information_folder_textfield_short_name">
-            </label>
             <label>{{ lang.isGerman() ? 'Name' : 'Name' }} *
               <input formControlName="information_folder_textfield_name" required>
             </label>
-            <label>{{ lang.isGerman() ? 'Beschreibung' : 'Description' }}
-              <textarea rows="3" formControlName="information_folder_textfield_description"></textarea>
+            <label>{{ lang.isGerman() ? 'Kurzname' : 'Short name' }}
+              <input formControlName="information_folder_textfield_short_name">
             </label>
-            <label>{{ lang.isGerman() ? 'Vertraulichkeit' : 'Confidentiality' }} *
-              <select formControlName="information_folder_picklist_confidentiality_level">
-                <option value="Internal">Internal</option>
-                <option value="Public">Public</option>
-                <option value="Confidential">Confidential</option>
-              </select>
-            </label>
-            <label>{{ lang.isGerman() ? 'Dokumentkategorie' : 'Document category' }}
-              <input formControlName="information_folder_textfield_document_category">
-            </label>
-            <label>{{ lang.isGerman() ? 'Dokumentsprache' : 'Document language' }}
-              <im-multi-select-dropdown [options]="documentLanguages()"
-                formControlName="information_folder_multi_select_picklist_document_language" />
-            </label>
-            <label>{{ lang.isGerman() ? 'Status' : 'Status' }} *
-              <input value="Draft" disabled>
+            <label>{{ lang.isGerman() ? 'Frist (Tage)' : 'Deadline (days)' }} *
+              <input type="number" min="1" formControlName="information_folder_number_deadlinedays" required>
+              <small>{{ lang.isGerman() ? 'Zeit zur Bestätigung, gezählt ab Aktivierung' : 'Time to confirm, counted from activation' }}</small>
             </label>
             <label>{{ lang.isGerman() ? 'Verantwortliches Team' : 'Responsible team' }} *
               <select formControlName="information_folder_lookup_responsible_team" required>
@@ -86,13 +70,31 @@ import { ActivateDialogComponent } from './activate-dialog.component';
                 }
               </select>
             </label>
-            <label>{{ lang.isGerman() ? 'Frist (Tage)' : 'Deadline (days)' }} *
-              <input type="number" min="1" formControlName="information_folder_number_deadlinedays" required>
+            <label>{{ lang.isGerman() ? 'Dokumentkategorie' : 'Document category' }}
+              <input formControlName="information_folder_textfield_document_category">
+              <small>{{ lang.isGerman() ? 'Freitext im aktuellen Tenant' : 'Free text in the current tenant' }}</small>
+            </label>
+            <label>{{ lang.isGerman() ? 'Vertraulichkeit' : 'Confidentiality level' }} *
+              <select formControlName="information_folder_picklist_confidentiality_level">
+                <option value="Internal">Internal</option>
+                <option value="Public">Public</option>
+                <option value="Confidential">Confidential</option>
+              </select>
+            </label>
+            <label>{{ lang.isGerman() ? 'Beschreibung' : 'Description' }}
+              <textarea rows="3" formControlName="information_folder_textfield_description"></textarea>
+            </label>
+            <label>{{ lang.isGerman() ? 'Dokumentsprache' : 'Document language' }}
+              <im-multi-select-dropdown [options]="documentLanguages()"
+                formControlName="information_folder_multi_select_picklist_document_language" />
+            </label>
+            <label>{{ lang.isGerman() ? 'Status' : 'Status' }}
+              <input value="Draft" disabled>
             </label>
           </div>
 
           <label class="rich">
-            {{ lang.isGerman() ? 'Benutzerinformation' : 'User Information' }} *
+            {{ lang.isGerman() ? 'Nachricht an Empfänger' : 'Message to recipients' }} *
             <small>{{ lang.isGerman()
               ? 'Wird auf jede Kenntnisnahme kopiert. Das ist der Text, den Empfänger lesen.'
               : 'Copied onto every acknowledgement. This is the text recipients read.' }}</small>
@@ -101,22 +103,25 @@ import { ActivateDialogComponent } from './activate-dialog.component';
 
           <footer>
             <p class="hint">{{ lang.isGerman()
-              ? 'Speichern legt den Ordner im Status „Entwurf" an — es werden noch keine Benachrichtigungen versendet.'
-              : 'Saving creates the folder in Draft — no notifications are sent yet.' }}</p>
-            <button class="primary" [disabled]="form.invalid || busy()">{{ lang.isGerman() ? 'Speichern und weiter' : 'Save and continue' }}</button>
+              ? 'Speichern legt den Ordner im Status „Entwurf" an. Zielgruppe und Version folgen in Schritt 2 und 3 — es werden noch keine Benachrichtigungen versendet.'
+              : 'Saving creates the folder in Draft. Audience and version follow in steps 2 and 3 — no notifications are sent yet.' }}</p>
+            <button class="primary" [disabled]="form.invalid || busy()">
+              {{ busy() ? (lang.isGerman() ? 'Wird gespeichert…' : 'Saving…') : (lang.isGerman() ? 'Speichern und weiter' : 'Save and continue') }}
+            </button>
           </footer>
         </form>
     }
     @if (visitedSteps().has(2)) {
-      <im-audience-builder [style.display]="step() === 2 ? null : 'none'" [folderId]="folderId()" (continue)="onAudienceContinue($event)" />
+      <im-audience-builder [style.display]="step() === 2 ? null : 'none'" [folderId]="folderId()" (continue)="onAudienceContinue($event)" (back)="goToStep(1)" />
     }
     @if (visitedSteps().has(3)) {
-      <im-version-upload [style.display]="step() === 3 ? null : 'none'" [folderId]="folderId()" [folderName]="form.value.information_folder_textfield_name ?? ''"
-                          (continue)="onVersionSaved($event)" />
+      <im-version-upload [style.display]="step() === 3 ? null : 'none'" [folderId]="folderId()" [folderName]="form.getRawValue().information_folder_textfield_name"
+                          (continue)="onVersionSaved($event)" (back)="goToStep(2)" />
     }
     @if (visitedSteps().has(4)) {
       <im-activate-dialog [style.display]="step() === 4 ? null : 'none'" [folderId]="folderId()" [versionId]="versionRecordId()" [teamCount]="teamCount()" [userCount]="userCount()"
-                          [supersedes]="null" [deadlineDays]="form.value.information_folder_number_deadlinedays ?? 14" />
+                          [confidentialityLevel]="form.getRawValue().information_folder_picklist_confidentiality_level"
+                          [supersedes]="null" [deadlineDays]="form.getRawValue().information_folder_number_deadlinedays" (back)="goToStep(3)" />
     }
   `
 })
@@ -239,8 +244,15 @@ export class FolderWizardComponent {
     information_folder_richtext_area_user_information: ['', Validators.required]
   });
 
+  /**
+   * The folder record must only ever be created once — visitedSteps keeps this form mounted
+   * (not destroyed) so navigating to Audience and back leaves it fully live. Once folderId is
+   * set, this click updates the same existing record instead (updateDraft) — confirmed live
+   * that re-submitting the create payload here produced a real duplicate Information Folder.
+   */
   saveDraft(): void {
     if (this.form.invalid || this.busy()) return;
+    if (this.folderId()) { this.updateDraft(); return; }
     this.busy.set(true);
     this.createError.set('');
     const v = this.form.getRawValue();
@@ -258,6 +270,39 @@ export class FolderWizardComponent {
       _request_id: crypto.randomUUID(),
       _gridSectionsRecords_: {},
       last_modified_timestamp: ''
+    });
+  }
+
+  /** Real update of the already-created folder — PUT, not PATCH: PATCH is silently accepted (200/success body) but never actually persists on this tenant. */
+  private updateDraft(): void {
+    const folderId = this.folderId();
+    if (!folderId) return;
+    this.busy.set(true);
+    this.createError.set('');
+    const v = this.form.getRawValue();
+
+    this.http.get<any>(`/networking/rest/record/${OBJECT_ID.informationFolder}/${folderId}`, {
+      params: { fieldList: 'last_modified_timestamp', alt: 'json' }
+    }).pipe(
+      switchMap((response) => {
+        const lastModifiedTimestamp = response?.platform?.record?.last_modified_timestamp ?? '';
+        return this.http.put<any>(`/networking/solution/ServiceDesk/record/${OBJECT_ID.informationFolder}/${folderId}`, {
+          ...v,
+          information_folder_multi_select_picklist_document_language: v.information_folder_multi_select_picklist_document_language.join(','),
+          layout_id: INFORMATION_FOLDER_LAYOUT_ID,
+          last_modified_timestamp: lastModifiedTimestamp
+        });
+      })
+    ).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.step.set(2);
+      },
+      error: (err) => {
+        console.error('Information folder update failed', err);
+        this.busy.set(false);
+        this.createError.set(err?.error?.__exception_msg__ ?? (this.lang.isGerman() ? 'Aktualisierung fehlgeschlagen.' : 'Update failed.'));
+      }
     });
   }
 

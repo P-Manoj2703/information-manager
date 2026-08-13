@@ -49,3 +49,5 @@
 .ghost { flex:0 0 auto; border:1px solid var(--border-2); background:#fff; color:var(--fg-2); cursor:pointer;
          font:inherit; font-size:13px; font-weight:600; padding:8px 16px; border-radius:var(--radius-pill);
          &:disabled { color:var(--fg-4); cursor:not-allowed; } }
+.preview-panel { display:flex; flex-direction:column; gap:10px; }
+.close-preview { align-self:flex-end; }

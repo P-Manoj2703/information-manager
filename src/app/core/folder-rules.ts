@@ -29,8 +29,14 @@ const EDITABLE_IN_DRAFT: FolderField[] = [
   'information_folder_richtext_area_user_information'
 ];
 
+/** Inactive is the one status that unlocks nearly everything — short name/name/status stay read-only regardless. */
 const EDITABLE_WHEN_INACTIVE: FolderField[] = [
-  ...EDITABLE_IN_DRAFT,
+  'information_folder_picklist_confidentiality_level',
+  'information_folder_number_deadlinedays',
+  'information_folder_textfield_description',
+  'information_folder_textfield_document_category',
+  'information_folder_multi_select_picklist_document_language',
+  'information_folder_richtext_area_user_information',
   'information_folder_lookup_responsible_team'
 ];
 

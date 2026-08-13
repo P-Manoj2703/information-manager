@@ -15,6 +15,8 @@ interface Row {
   /** The real DMS document id, set once the finalize call succeeds — needed to delete it from ECAP. */
   documentId?: string;
   deleting?: boolean;
+  /** Real client-side timestamp captured the moment the finalize call actually succeeds — this object has no server-returned upload date to read instead. */
+  uploadedAt?: Date;
 }
 
 /**
@@ -40,7 +42,10 @@ interface Row {
   styleUrl: './version-upload.component.scss',
   template: `
     <section class="card">
-      <h2>{{ lang.isGerman() ? 'Dokumentversion' : 'Document version' }}</h2>
+      <h2><span class="step-num">3</span> · {{ lang.isGerman() ? 'Dokumentversion' : 'Document version' }}</h2>
+      <p class="subtitle">{{ lang.isGerman()
+        ? 'Nur PDF. Die Version bleibt im Entwurf, bis Sie sie aktivieren.'
+        : 'PDF only. The version stays in Draft until you activate it.' }}</p>
 
       @if (createError()) { <p class="error">{{ createError() }}</p> }
 
@@ -91,6 +96,9 @@ interface Row {
                 <strong>{{ r.file.name }}</strong>
                 <small [class.msg]="r.state === 'error'">{{ rowStatus(r) }}</small>
               </span>
+              <span class="pill" [class.pill--error]="r.state === 'error'" [class.pill--pending]="r.state === 'queued' || r.state === 'uploading'">
+                {{ pillLabel(r) }}
+              </span>
               @if (r.state !== 'uploading') {
                 <button type="button" class="x" [disabled]="r.deleting" (click)="removeFile(r)" aria-label="remove">×</button>
               }
@@ -101,7 +109,7 @@ interface Row {
         @if (deleteError()) { <p class="error">{{ deleteError() }}</p> }
 
         <p class="count">
-          {{ lang.isGerman() ? 'Dokumente gesamt (automatisch)' : 'Total documents (maintained automatically)' }}:
+          {{ lang.isGerman() ? 'Dokumente gesamt (automatisch)' : 'Total documents (maintained automatically)' }}
           <b>{{ okCount() }}</b>
         </p>
       }
@@ -115,6 +123,8 @@ interface Row {
       }
 
       <footer>
+        <span class="spacer"></span>
+        <button type="button" class="ghost" (click)="back.emit()">{{ lang.isGerman() ? 'Zurück' : 'Back' }}</button>
         @if (!versionRecordId()) {
           <button class="primary" [disabled]="form.invalid || creating()" (click)="save()">
             {{ creating()
@@ -122,7 +132,7 @@ interface Row {
               : (lang.isGerman() ? 'Speichern' : 'Save') }}
           </button>
         } @else {
-          <button class="primary" (click)="continue.emit(versionRecordId() ?? '')">{{ lang.isGerman() ? 'Weiter' : 'Continue' }}</button>
+          <button class="primary" (click)="continue.emit(versionRecordId() ?? '')">{{ lang.isGerman() ? 'Weiter zur Veröffentlichung' : 'Continue to publish' }}</button>
         }
       </footer>
     </section>
@@ -140,6 +150,8 @@ export class VersionUploadComponent {
   readonly folderName = input<string>('');
   /** Emits the newly-created Document Version record id, so the next step can act on it. */
   @Output() readonly continue = new EventEmitter<string>();
+  /** Navigates back to the Audience step — this component holds no step-routing logic of its own. */
+  @Output() readonly back = new EventEmitter<void>();
 
   readonly form = this.fb.nonNullable.group({
     document_version_textfield_name: ['', Validators.required],
@@ -169,7 +181,21 @@ export class VersionUploadComponent {
     switch (r.state) {
       case 'queued': return this.lang.isGerman() ? 'Wird nach dem Speichern hochgeladen' : 'Will upload once saved';
       case 'uploading': return this.lang.isGerman() ? 'Wird hochgeladen…' : 'Uploading…';
-      default: return this.size(r.file);
+      default: return r.uploadedAt ? `${this.size(r.file)} · ${this.uploadedAtLabel(r.uploadedAt)}` : this.size(r.file);
+    }
+  }
+
+  private uploadedAtLabel(d: Date): string {
+    const time = d.toLocaleTimeString(this.lang.isGerman() ? 'de-DE' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
+    return this.lang.isGerman() ? `Hochgeladen um ${time}` : `Uploaded at ${time}`;
+  }
+
+  pillLabel(r: Row): string {
+    switch (r.state) {
+      case 'ok': return this.lang.isGerman() ? 'Hochgeladen' : 'Uploaded';
+      case 'error': return this.lang.isGerman() ? 'Abgelehnt' : 'Rejected';
+      case 'uploading': return this.lang.isGerman() ? 'Wird hochgeladen' : 'Uploading';
+      default: return this.lang.isGerman() ? 'Warteschlange' : 'Queued';
     }
   }
 
@@ -298,7 +324,7 @@ export class VersionUploadComponent {
     ).subscribe({
       next: (finalizeResponse) => {
         const documentId = String(finalizeResponse?.record?.id ?? '');
-        this.rows.update((rows) => rows.map((r) => r.file === file ? { ...r, state: 'ok', documentId } : r));
+        this.rows.update((rows) => rows.map((r) => r.file === file ? { ...r, state: 'ok', documentId, uploadedAt: new Date() } : r));
         this.maybeActivateFolder();
       },
       error: (err) => {

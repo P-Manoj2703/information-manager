@@ -21,6 +21,7 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
       font: inherit; font-size: 14px; padding: 10px 12px; cursor: pointer;
       border: 1px solid var(--border-1); border-radius: var(--radius-input); background: #fff;
       &:focus-visible, &.open { outline: none; box-shadow: var(--focus-ring); border-color: var(--escriba-teal); }
+      &:disabled { background: var(--bg-2); color: var(--fg-3); cursor: not-allowed; }
     }
     .trigger__text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-1); }
     .trigger__text.placeholder { color: var(--fg-3); font-weight: 400; }
@@ -40,7 +41,7 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
     .mark { flex: 0 0 14px; font-size: 13px; color: var(--escriba-teal-700); }
   `],
   template: `
-    <button type="button" class="trigger" [class.open]="open()" (click)="toggleOpen()">
+    <button type="button" class="trigger" [class.open]="open()" [disabled]="disabled()" (click)="toggleOpen()">
       <span class="trigger__text" [class.placeholder]="!value().length">{{ closedLabel() }}</span>
       <span class="caret">▾</span>
     </button>
@@ -69,6 +70,7 @@ export class MultiSelectDropdownComponent implements ControlValueAccessor {
 
   readonly open = signal(false);
   readonly value = signal<string[]>([]);
+  readonly disabled = signal(false);
 
   private onChange: (value: string[]) => void = () => {};
   private onTouched: () => void = () => {};
@@ -122,5 +124,10 @@ export class MultiSelectDropdownComponent implements ControlValueAccessor {
 
   registerOnTouched(fn: () => void): void {
     this.onTouched = fn;
+  }
+
+  setDisabledState(isDisabled: boolean): void {
+    this.disabled.set(isDisabled);
+    if (isDisabled) this.open.set(false);
   }
 }

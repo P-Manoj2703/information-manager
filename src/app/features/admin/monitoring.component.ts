@@ -109,7 +109,11 @@ const STATUS_OPTIONS: AckStatus[] = ['Pending', 'Overdue', 'Done', 'Obsolete', '
               <td class="tabular">{{ r.deadline }}</td>
             </tr>
           } @empty {
-            <tr><td colspan="7" class="empty">{{ lang.isGerman() ? 'Keine Kenntnisnahmen.' : 'No acknowledgements.' }}</td></tr>
+            <tr><td colspan="7" class="empty">
+              {{ loading()
+                ? (lang.isGerman() ? 'Wird geladen…' : 'Loading…')
+                : (lang.isGerman() ? 'Keine Kenntnisnahmen.' : 'No acknowledgements.') }}
+            </td></tr>
           }
         </tbody>
       </table>
@@ -185,8 +189,12 @@ export class MonitoringComponent {
 
   readonly statusOptions = STATUS_OPTIONS;
 
+  readonly loading = signal(true);
+
   constructor() {
     effect(() => { this.pageSize(); this.currentPage.set(1); }, { allowSignalWrites: true });
+    // refreshTick bumps after a bulk save — that refetch should show loading again too, not the empty state.
+    effect(() => { this.payloads(); this.loading.set(true); }, { allowSignalWrites: true });
   }
 
   readonly payloads = computed<RecordsPayloadMeta[]>(() => {
@@ -226,11 +234,13 @@ export class MonitoringComponent {
     }));
     this.rowsSignal.set(mapped);
     this.selected.set(new Set());
+    this.loading.set(false);
   }
 
   onError(error: unknown): void {
     console.error('Failed to load Monitoring records', error);
     this.rowsSignal.set([]);
+    this.loading.set(false);
   }
 
   allSelected(): boolean {
@@ -265,9 +275,9 @@ export class MonitoringComponent {
   }
 
   /**
-   * Real update, per selected record: fetch the record's own current date_modified first (its
-   * value doubles as last_modified_timestamp in the write, the same convention already proven
-   * for Information Folder/Organizational Unit updates), then PUT the new status + deadline.
+   * Real update, per selected record: fetch the record's own current last_modified_timestamp
+   * first (ECAP's optimistic-concurrency token — a numeric epoch string, distinct from the ISO
+   * date_modified field), then PUT the new status + deadline with it.
    * The deadline field takes MM/DD/YYYY here — confirmed from the live capture — not the ISO
    * format the generic REST read endpoint uses.
    */
@@ -296,9 +306,9 @@ export class MonitoringComponent {
 
   private updateOne(id: string, status: AckStatus, deadlineMdY: string) {
     return this.http.get<any>(`/networking/rest/record/${OBJECT_ID.acknowledgement}/${id}`, {
-      params: { fieldList: 'date_modified', alt: 'json' }
+      params: { fieldList: 'last_modified_timestamp', alt: 'json' }
     }).pipe(
-      map((response) => response?.platform?.record?.date_modified ?? ''),
+      map((response) => response?.platform?.record?.last_modified_timestamp ?? ''),
       switchMap((lastModifiedTimestamp) =>
         this.http.put<any>(`/networking/solution/ServiceDesk/record/${OBJECT_ID.acknowledgement}/${id}`, {
           acknowledgment_picklist_status: status,

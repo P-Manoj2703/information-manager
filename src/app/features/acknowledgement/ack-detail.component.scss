@@ -1,11 +1,13 @@
 /**
- * Grid, not two independent flex columns — the message/task pair and the pdf-viewer/doc-picker
- * pair need to land in the same row as each other so the right column visually pairs with its
- * left counterpart at each step, not just stack independently at whatever height each side's
- * own content happens to produce.
+ * Two independent flex columns, not a shared grid row — a shared row forces the row's height to
+ * match whichever side is taller (the task panel, once its deadline/version/status/button/note
+ * are all in), leaving a dead gap under the shorter message card before the document viewer
+ * below it could start. Each column now stacks purely by its own content height instead.
  */
-.layout { display: grid; grid-template-columns: 1fr 344px; align-items: start; gap: 20px 24px; max-width: 1280px; }
-.back { grid-column: 1 / -1; font-size: 13px; font-weight: 600; }
+.layout { display: flex; align-items: flex-start; gap: 20px 24px; max-width: 1280px; flex-wrap: wrap; }
+.col { display: flex; flex-direction: column; gap: 20px; flex: 1 1 auto; min-width: 0; }
+.col:last-child { flex: 0 1 344px; }
+.back { flex-basis: 100%; font-size: 13px; font-weight: 600; }
 
 .card { background: #fff; border: 1px solid var(--border-1); border-radius: var(--radius-card); }
 .message {
