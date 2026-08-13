@@ -89,8 +89,8 @@ function versionLabelOf(displayValue: string | undefined): string {
                 }
               </div>
               <h2>{{ a.folderName }}</h2>
-              @if (descriptionFor(a.id)) {
-                <p>{{ descriptionFor(a.id) }}</p>
+              @if (userInformationFor(a.id)) {
+                <p [innerHTML]="userInformationFor(a.id)"></p>
               }
               @if (tagLineFor(a)) {
                 <span class="tagline">{{ tagLineFor(a) }}</span>
@@ -215,13 +215,13 @@ export class TaskListComponent {
     });
   }
 
-  private readonly descriptionByAckId = signal<Map<string, string>>(new Map());
+  private readonly userInformationByAckId = signal<Map<string, string>>(new Map());
   private readonly dateModifiedByAckId = signal<Map<string, string>>(new Map());
   private readonly categoryByFolderId = signal<Map<string, string>>(new Map());
   private readonly validFromByVersionId = signal<Map<string, string>>(new Map());
 
-  descriptionFor(ackId: string): string {
-    return this.descriptionByAckId().get(ackId) ?? '';
+  userInformationFor(ackId: string): string {
+    return this.userInformationByAckId().get(ackId) ?? '';
   }
 
   /** Category, optionally with a real "Valid from" (Document_Version's version_date_time_valid_from) appended — empty string hides the line entirely. */
@@ -240,27 +240,33 @@ export class TaskListComponent {
     return `${this.lang.isGerman() ? 'Bestätigt am' : 'Confirmed on'} ${this.lang.date(dateModified)}`;
   }
 
-  /** description + date_modified aren't on any of the myPending/myOverdue/myCompleted views — same per-id single-record GET pattern MyDocumentsComponent uses for its own extra fields. */
+  /**
+   * user_information + date_modified aren't on any of the myPending/myOverdue/myCompleted
+   * views — same per-id single-record GET pattern MyDocumentsComponent uses for its own extra
+   * fields. acknowledgment_richtextarea_user_information is the folder's own "Message to
+   * recipients" text (information_folder_richtext_area_user_information), copied onto every
+   * acknowledgement ECAP creates — same field ack-detail.component.ts already reads.
+   */
   private loadAckExtras(): void {
-    const known = this.descriptionByAckId();
+    const known = this.userInformationByAckId();
     const ids = this.all().map((a) => a.id).filter((id) => id && !known.has(id));
     if (!ids.length) return;
 
     forkJoin(ids.map((id) =>
       this.http.get<any>(`/networking/rest/record/${OBJECT_ID.acknowledgement}/${id}`, {
-        params: { fieldList: 'description,date_modified', alt: 'json' }
+        params: { fieldList: 'acknowledgment_richtextarea_user_information,date_modified', alt: 'json' }
       }).pipe(
         map((response) => ({
           id,
-          description: response?.platform?.record?.description ?? '',
+          userInformation: response?.platform?.record?.acknowledgment_richtextarea_user_information ?? '',
           dateModified: response?.platform?.record?.date_modified ?? ''
         })),
-        catchError((err) => { console.error('Failed to load acknowledgement extras', id, err); return of({ id, description: '', dateModified: '' }); })
+        catchError((err) => { console.error('Failed to load acknowledgement extras', id, err); return of({ id, userInformation: '', dateModified: '' }); })
       )
     )).subscribe((results) => {
-      this.descriptionByAckId.update((map) => {
+      this.userInformationByAckId.update((map) => {
         const next = new Map(map);
-        results.forEach(({ id, description }) => next.set(id, description));
+        results.forEach(({ id, userInformation }) => next.set(id, userInformation));
         return next;
       });
       this.dateModifiedByAckId.update((map) => {

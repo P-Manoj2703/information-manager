@@ -34,7 +34,13 @@
     border: 1px solid var(--border-dark-strong); color: var(--escriba-teal);
     font-size: 12px; font-weight: 700; display: grid; place-items: center;
   }
-  &__userName { font-size: 13px; color: #fff; }
+  &__userName { font-size: 13px; color: #fff; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__logout {
+    flex: 0 0 auto; width: 28px; height: 28px; border-radius: var(--radius-pill);
+    border: 1px solid var(--border-dark-strong); background: none; cursor: pointer;
+    color: var(--on-dark-3); display: grid; place-items: center;
+    &:hover { color: #fff; background: var(--navy-500); }
+  }
 }
 
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -57,13 +63,6 @@
       padding: 5px 11px; border-radius: var(--radius-pill); color: var(--fg-3);
       &.on { background: var(--navy-900); color: #fff; }
     }
-  }
-
-  &__logout {
-    margin-left: 12px; flex: 0 0 auto; border: 1px solid var(--border-1); background: none; cursor: pointer;
-    font: inherit; font-size: 12px; font-weight: 700; padding: 7px 14px; border-radius: var(--radius-pill);
-    color: var(--fg-3);
-    &:hover { color: var(--navy-900); border-color: var(--navy-900); }
   }
 }
 

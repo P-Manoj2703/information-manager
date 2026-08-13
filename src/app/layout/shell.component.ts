@@ -81,6 +81,14 @@ const PAGE_HEADERS: Record<string, PageHeader> = {
             <div class="rail__user">
               <span class="rail__avatar">{{ initials() }}</span>
               <span class="rail__userName">{{ session.session().displayName }}</span>
+              <button type="button" class="rail__logout" (click)="logout()"
+                      [attr.aria-label]="lang.isGerman() ? 'Abmelden' : 'Log out'"
+                      [attr.title]="lang.isGerman() ? 'Abmelden' : 'Log out'">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M6 2H3.5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1H6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M10.5 11 14 8l-3.5-3M14 8H6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
             </div>
           </div>
         </aside>
@@ -100,9 +108,6 @@ const PAGE_HEADERS: Record<string, PageHeader> = {
               <button type="button" [class.on]="lang.isGerman()" (click)="lang.set('de')">DE</button>
               <button type="button" [class.on]="!lang.isGerman()" (click)="lang.set('en')">EN</button>
             </div>
-            <button type="button" class="topbar__logout" (click)="logout()">
-              {{ lang.isGerman() ? 'Abmelden' : 'Log out' }}
-            </button>
           </header>
         }
         <main class="content"><router-outlet /></main>
@@ -139,6 +144,10 @@ export class ShellComponent {
         subtitleDe: 'Aufgabe aus dem Kenntnisnahme-Abschlussprozess',
         subtitleEn: 'Task from the Acknowledgment Completion process'
       };
+    }
+    if (/^\/folders\/[^/]+$/.test(path)) {
+      // Real subtitle (the folder's own name) comes from folder-detail.component.ts via PageSubtitleService.
+      return { titleKey: 'informationFolder' as const, subtitleDe: '', subtitleEn: '' };
     }
     return PAGE_HEADERS[path] ?? null;
   });

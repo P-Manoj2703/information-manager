@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, signal } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -6,6 +6,7 @@ import { toSignal, toObservable } from '@angular/core/rxjs-interop';
 import { Observable, catchError, combineLatest, map, of, switchMap } from 'rxjs';
 import { LanguageService } from '@core/i18n/language.service';
 import { SessionService } from '@core/services/session.service';
+import { PageSubtitleService } from '@core/services/page-subtitle.service';
 import { DOCUMENT_VERSION_ACKNOWLEDGEMENT_SECTION_ID, INFORMATION_FOLDER_VERSIONS_SECTION_ID, OBJECT_ID } from '@core/objects';
 import { AckStatus, InformationFolder } from '@core/models';
 import { completion } from '@core/rollup';
@@ -173,6 +174,8 @@ export class FolderDetailComponent {
   private readonly fb = inject(FormBuilder);
   readonly session = inject(SessionService);
   readonly lang = inject(LanguageService);
+  private readonly pageSubtitle = inject(PageSubtitleService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly id = input.required<string>();
   readonly refresh = signal(0);
@@ -189,6 +192,15 @@ export class FolderDetailComponent {
   readonly folder = toSignal(
     combineLatest([toObservable(this.id), toObservable(this.refresh)]).pipe(
       switchMap(([id]) => this.fetchFolder(id))));
+
+  constructor() {
+    // Shell topbar shows a generic "Information folder" title here — this fills in the real folder name as its subtitle, same mechanism task-list.component.ts uses for its own open/overdue counts.
+    effect(() => {
+      const name = this.folder()?.information_folder_textfield_name;
+      if (name) this.pageSubtitle.set(name);
+    });
+    this.destroyRef.onDestroy(() => this.pageSubtitle.clear());
+  }
 
   /** The Active version's own Acknowledgement rows — the real, server-resolved audience, not a client-side guess. */
   private readonly acks = toSignal(

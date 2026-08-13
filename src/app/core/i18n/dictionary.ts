@@ -6,6 +6,7 @@ export const DICT = {
   myAcknowledgements: ['Meine Kenntnisnahmen', 'My acknowledgements'],
   documents:          ['Dokumente', 'Documents'],
   folders:            ['Informationsordner', 'Information folders'],
+  informationFolder:  ['Informationsordner', 'Information folder'],
   acknowledgements:   ['Kenntnisnahmen', 'Acknowledgements'],
   acknowledgement:    ['Kenntnisnahme', 'Acknowledgement'],
   templates:          ['Verteilervorlagen', 'Distribution templates'],
