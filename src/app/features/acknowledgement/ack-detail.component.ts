@@ -24,12 +24,10 @@ interface AckDetailRecord {
 /**
  * documentversion_record's displayValue is the full record_locator ("{folder name} - {version}")
  * — only the part after the last " - " is the version itself, same parsing already proven for
- * this same "{name} - {version}" shape in version-timeline.component.ts. Shown as "v-{version}"
- * rather than the bare version string.
+ * this same "{name} - {version}" shape in version-timeline.component.ts.
  */
 function versionLabelOf(displayValue: string | undefined): string {
-  const v = (displayValue ?? '').split(' - ').pop() || '';
-  return v ? `v-${v}` : '';
+  return (displayValue ?? '').split(' - ').pop() || '';
 }
 
 /**

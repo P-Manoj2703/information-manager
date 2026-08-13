@@ -1,9 +1,12 @@
 .back { display:inline-block; margin-bottom:16px; font-size:13px; color:var(--fg-3); text-decoration:none;
         &:hover { color:var(--escriba-teal-700); } }
 
-.layout { display:grid; grid-template-columns:1fr 344px; align-items:start; gap:20px 24px; max-width:1280px; }
+.layout {
+  display:grid; grid-template-columns:1fr 344px; align-items:start; gap:20px 24px; max-width:1280px;
+  @media (max-width: 860px) { grid-template-columns: 1fr; }
+}
 .full { grid-column:1 / -1; }
-.docs-row { display:flex; align-items:start; gap:20px 24px;
+.docs-row { display:flex; flex-wrap:wrap; align-items:start; gap:20px 24px;
   > im-pdf-viewer { flex:1 1 auto; min-width:0; }
 }
 

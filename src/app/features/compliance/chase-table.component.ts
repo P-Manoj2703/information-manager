@@ -13,6 +13,15 @@ import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-fil
 import { PagerComponent } from '@shared/ui/pager.component';
 
 /**
+ * documentversion_record's name/displayValue is the full record_locator ("{folder name} -
+ * {version}") — only the part after the last " - " is the version itself, same parsing already
+ * proven for this shape elsewhere (ack-detail.component.ts, task-list.component.ts, etc.).
+ */
+function versionLabelOf(displayValue: string | undefined): string {
+  return (displayValue ?? '').split(' - ').pop() || '';
+}
+
+/**
  * UC-IP-06 / UC-CMP-03. Person-level chase across folders.
  *
  * Real data via libEcapRuntimeRecordList against Acknowledgement's own saved views — the
@@ -144,12 +153,17 @@ export class ChaseTableComponent {
   private readonly queryParams = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
   readonly folderFilter = computed(() => this.queryParams().get('folder') ?? '');
 
-  /** Which real ECAP view backs the current chip. */
+  /**
+   * Which real ECAP view backs the current chip. Compliance gets its own dedicated
+   * Pending/Overdue/Completed views here — tenant-wide oversight views, not the "my own
+   * acknowledgements" views Information Provider uses for the same three chips.
+   */
   private readonly viewIds = computed<string[]>(() => {
+    const isCompliance = this.session.role() === 'complianceverantwortlicher';
     switch (this.filter()) {
-      case 'overdue': return [ACKNOWLEDGEMENT_VIEW_ID.myOverdue];
-      case 'pending': return [ACKNOWLEDGEMENT_VIEW_ID.myPending];
-      case 'done': return [ACKNOWLEDGEMENT_VIEW_ID.myCompleted];
+      case 'overdue': return [isCompliance ? ACKNOWLEDGEMENT_VIEW_ID.complianceOverdue : ACKNOWLEDGEMENT_VIEW_ID.myOverdue];
+      case 'pending': return [isCompliance ? ACKNOWLEDGEMENT_VIEW_ID.compliancePending : ACKNOWLEDGEMENT_VIEW_ID.myPending];
+      case 'done': return [isCompliance ? ACKNOWLEDGEMENT_VIEW_ID.complianceCompleted : ACKNOWLEDGEMENT_VIEW_ID.myCompleted];
       case 'myUser': return [ACKNOWLEDGEMENT_VIEW_ID.assignedToUsers];
       case 'all': return [ACKNOWLEDGEMENT_VIEW_ID.allForCui];
       default: return [];
@@ -169,7 +183,7 @@ export class ChaseTableComponent {
   private readonly loaded = signal<boolean[]>([]);
   readonly loading = computed(() => this.loaded().length === 0 || this.loaded().some((l) => !l));
 
-  readonly pageSize = signal(20);
+  readonly pageSize = signal(10);
   readonly currentPage = signal(1);
 
   constructor() {
@@ -250,7 +264,7 @@ export class ChaseTableComponent {
       acknowledgement_lookup_information_folder: raw.acknowledgement_lookup_information_folder?.id ?? '',
       acknowledgement_textfield_information_folder_name:
         raw.acknowledgement_textfield_information_folder_name ?? raw.acknowledgement_lookup_information_folder?.name ?? '',
-      documentversion_record: raw.documentversion_record?.name ?? raw.documentversion_record ?? '',
+      documentversion_record: versionLabelOf(raw.documentversion_record?.name ?? raw.documentversion_record),
       acknowledgement_date_deadline_date: raw.acknowledgement_date_deadline_date ?? '',
       acknowledgment_richtextarea_user_information: ''
     };

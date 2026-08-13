@@ -29,12 +29,10 @@ interface TaskRow {
 /**
  * documentversion_record's name/displayValue is the full record_locator ("{folder name} -
  * {version}") — only the part after the last " - " is the version itself, same parsing already
- * proven for this shape in version-timeline.component.ts. Shown as "v-{version}", same
- * convention as ack-detail.component.ts's own version label.
+ * proven for this shape in version-timeline.component.ts.
  */
 function versionLabelOf(displayValue: string | undefined): string {
-  const v = (displayValue ?? '').split(' - ').pop() || '';
-  return v ? `v-${v}` : '';
+  return (displayValue ?? '').split(' - ').pop() || '';
 }
 
 /**
@@ -153,7 +151,7 @@ export class TaskListComponent {
   private readonly loaded = signal<boolean[]>([]);
   readonly loading = computed(() => this.loaded().length === 0 || this.loaded().some((l) => !l));
 
-  readonly pageSize = signal(20);
+  readonly pageSize = signal(10);
   readonly currentPage = signal(1);
 
   constructor() {

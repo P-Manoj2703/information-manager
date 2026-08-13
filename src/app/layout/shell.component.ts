@@ -149,6 +149,10 @@ export class ShellComponent {
       // Real subtitle (the folder's own name) comes from folder-detail.component.ts via PageSubtitleService.
       return { titleKey: 'informationFolder' as const, subtitleDe: '', subtitleEn: '' };
     }
+    if (/^\/folders\/[^/]+\/versions\/new$/.test(path)) {
+      // Real subtitle (the folder's own name) comes from version-form.component.ts via PageSubtitleService.
+      return { titleKey: 'newVersion' as const, subtitleDe: '', subtitleEn: '' };
+    }
     return PAGE_HEADERS[path] ?? null;
   });
 

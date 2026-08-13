@@ -2,11 +2,11 @@
         &:hover { color: var(--escriba-teal-700); } }
 
 .rail {
-  display: flex; margin: 0 0 24px; padding: 0; list-style: none;
+  display: flex; flex-wrap: wrap; margin: 0 0 24px; padding: 0; list-style: none;
   background: #fff; border: 1px solid var(--border-1); border-radius: var(--radius-card); overflow: hidden;
 
   &__step {
-    flex: 1; display: flex; align-items: center; gap: 12px; padding: 16px 18px;
+    flex: 1 1 160px; display: flex; align-items: center; gap: 12px; padding: 16px 18px;
     cursor: pointer; border-right: 1px solid var(--border-1); font-size: 13px; font-weight: 600; opacity: .55;
     &.on { background: var(--bg-mint); opacity: 1; }
     &.past { opacity: 1; }
@@ -26,19 +26,23 @@
   h2 { margin: 0; font-size: 20px; font-weight: 300; color: var(--fg-2);
     .step-num { color: var(--escriba-teal-700); font-weight: 700; } }
 }
-.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px 24px; }
+.grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px 24px;
+  @media (max-width: 700px) { grid-template-columns: 1fr; }
+}
 .error { margin: 0; font-size: 13px; color: var(--danger, #c0392b); }
 
 label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }
 label small { font-weight: 400; color: var(--fg-3); }
+label small.field-error { color: var(--danger, #c0392b); font-weight: 600; }
 input, select, textarea {
   font: inherit; font-size: 14px; font-weight: 400; padding: 10px 12px;
   border: 1px solid var(--border-1); border-radius: var(--radius-input); background: #fff;
   &:focus-visible { outline: none; box-shadow: var(--focus-ring); border-color: var(--escriba-teal); }
 }
 
-footer { display: flex; align-items: center; gap: 16px; padding-top: 16px; border-top: 1px solid var(--border-1); }
-.hint { margin: 0; font-size: 12px; color: var(--fg-3); max-width: 52ch; }
+footer { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding-top: 16px; border-top: 1px solid var(--border-1); }
+.hint { margin: 0; font-size: 12px; color: var(--fg-3); max-width: 52ch; flex: 1 1 240px; }
 .primary {
   margin-left: auto; border: 0; cursor: pointer; font: inherit; font-size: 14px; font-weight: 600;
   background: var(--escriba-teal); color: var(--navy-900); padding: 12px 22px; border-radius: var(--radius-pill);

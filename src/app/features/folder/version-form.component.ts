@@ -1,9 +1,10 @@
-import { Component, computed, inject, input, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
 import { toSignal, toObservable } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
 import { catchError, map, of, switchMap } from 'rxjs';
 import { LanguageService } from '@core/i18n/language.service';
+import { PageSubtitleService } from '@core/services/page-subtitle.service';
 import { INFORMATION_FOLDER_VERSIONS_SECTION_ID, OBJECT_ID } from '@core/objects';
 import { VersionUploadComponent } from './version-upload.component';
 import { ActivateDialogComponent } from './activate-dialog.component';
@@ -29,7 +30,7 @@ import { ActivateDialogComponent } from './activate-dialog.component';
     </p>
 
     @if (!versionRecordId()) {
-      <im-version-upload [folderId]="id()" [folderName]="folderName()" (continue)="onVersionSaved($event)" />
+      <im-version-upload [folderId]="id()" [folderName]="folderName()" (continue)="onVersionSaved($event)" (back)="goBack()" />
     } @else {
       <im-activate-dialog [folderId]="id()" [versionId]="versionRecordId()"
                            [teamCount]="orgUnitCount()" [userCount]="userCount()"
@@ -41,6 +42,9 @@ import { ActivateDialogComponent } from './activate-dialog.component';
 })
 export class VersionFormComponent {
   private readonly http = inject(HttpClient);
+  private readonly router = inject(Router);
+  private readonly pageSubtitle = inject(PageSubtitleService);
+  private readonly destroyRef = inject(DestroyRef);
   readonly lang = inject(LanguageService);
   readonly id = input.required<string>();
   readonly versionRecordId = signal('');
@@ -49,6 +53,20 @@ export class VersionFormComponent {
     toObservable(this.id).pipe(switchMap((folderId) => this.fetchFolderName(folderId))),
     { initialValue: '' }
   );
+
+  constructor() {
+    // Shell topbar shows a generic "New version" title here — this fills in the real folder name as its subtitle, same mechanism folder-detail.component.ts uses.
+    effect(() => {
+      const name = this.folderName();
+      if (name) this.pageSubtitle.set(name);
+    });
+    this.destroyRef.onDestroy(() => this.pageSubtitle.clear());
+  }
+
+  /** version-upload.component.ts's own (back) emit carries no routing logic — this is the one place on this page that actually navigates. */
+  goBack(): void {
+    this.router.navigate(['/folders', this.id()]);
+  }
 
   readonly orgUnitCount = toSignal(
     toObservable(this.id).pipe(switchMap((folderId) => this.fetchCount(OBJECT_ID.organizationalUnits, folderId))),

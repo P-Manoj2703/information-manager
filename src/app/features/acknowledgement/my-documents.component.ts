@@ -22,12 +22,10 @@ interface DocRow {
 /**
  * documentversion_record's name/displayValue is the full record_locator ("{folder name} -
  * {version}") — only the part after the last " - " is the version itself, same parsing already
- * proven for this shape in version-timeline.component.ts. Shown as "v-{version}", same
- * convention as ack-detail.component.ts's own version label.
+ * proven for this shape in version-timeline.component.ts.
  */
 function versionLabelOf(displayValue: string | undefined): string {
-  const v = (displayValue ?? '').split(' - ').pop() || '';
-  return v ? `v-${v}` : '';
+  return (displayValue ?? '').split(' - ').pop() || '';
 }
 
 /**
@@ -50,7 +48,8 @@ function versionLabelOf(displayValue: string | undefined): string {
   styles: [`
     .note { background: #fff; border: 1px solid var(--border-1); border-radius: var(--radius-input);
             padding: 12px 16px; font-size: 13px; color: var(--fg-2); margin-bottom: 16px; }
-    table { width: 100%; border-collapse: collapse; background: #fff;
+    .scroll { overflow-x: auto; border-radius: var(--radius-card); }
+    table { width: 100%; min-width: 720px; border-collapse: collapse; background: #fff;
             border: 1px solid var(--border-1); border-radius: var(--radius-card); overflow: hidden; }
     th { text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--fg-3);
          background: var(--bg-2); padding: 12px 20px; }
@@ -74,6 +73,7 @@ function versionLabelOf(displayValue: string | undefined): string {
           : 'You only see document versions you hold an acknowledgement for. File uploads are not available for this role.' }}
     </p>
 
+    <div class="scroll">
     <table>
       <thead><tr>
         <th>
@@ -124,6 +124,7 @@ function versionLabelOf(displayValue: string | undefined): string {
         }
       </tbody>
     </table>
+    </div>
     @if (filteredRows().length) {
       <im-pager [total]="filteredRows().length" [(page)]="currentPage" [(pageSize)]="pageSize" />
     }
@@ -248,7 +249,7 @@ export class MyDocumentsComponent {
       });
   });
 
-  readonly pageSize = signal(20);
+  readonly pageSize = signal(10);
   readonly currentPage = signal(1);
 
   readonly pagedRows = computed(() => {

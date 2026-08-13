@@ -25,7 +25,8 @@ import { PagerComponent } from '@shared/ui/pager.component';
     .bar .spacer { margin-left: auto; }
     .new { background: var(--escriba-teal); color: var(--navy-900); padding: 11px 20px;
            border-radius: var(--radius-pill); font-weight: 600; }
-    table { width: 100%; border-collapse: collapse; background: #fff;
+    .scroll { overflow-x: auto; border-radius: var(--radius-card); }
+    table { width: 100%; min-width: 900px; border-collapse: collapse; background: #fff;
             border: 1px solid var(--border-1); border-radius: var(--radius-card); overflow: hidden; }
     th { text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--fg-3);
          background: var(--bg-2); padding: 12px 20px; white-space: nowrap; position: relative; }
@@ -64,6 +65,7 @@ import { PagerComponent } from '@shared/ui/pager.component';
       }
     </div>
 
+    <div class="scroll">
     <table>
       <thead><tr>
         <th>{{ lang.t('folders') }}</th>
@@ -130,6 +132,7 @@ import { PagerComponent } from '@shared/ui/pager.component';
         }
       </tbody>
     </table>
+    </div>
 
     @if (!visible().length && loading()) {
       <im-empty-state [title]="lang.isGerman() ? 'Wird geladen…' : 'Loading…'" />
@@ -204,7 +207,7 @@ export class FolderListComponent {
     this.view.set(this.view() === id ? 'all' : id);
   }
 
-  readonly pageSize = signal(20);
+  readonly pageSize = signal(10);
   readonly currentPage = signal(1);
 
   readonly pagedVisible = computed(() => {

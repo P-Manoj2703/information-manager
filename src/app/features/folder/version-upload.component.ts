@@ -67,9 +67,15 @@ interface Row {
         </label>
         <label>{{ lang.isGerman() ? 'Name' : 'Name' }} *
           <input formControlName="document_version_textfield_name">
+          @if (nameControl.invalid && nameControl.touched) {
+            <small class="field-error">{{ lang.isGerman() ? 'Bitte einen Namen eingeben.' : 'Please enter a name.' }}</small>
+          }
         </label>
         <label>{{ lang.t('version') }} *
           <input formControlName="version_text_field_version_id" placeholder="v1.0">
+          @if (versionIdControl.invalid && versionIdControl.touched) {
+            <small class="field-error">{{ lang.isGerman() ? 'Bitte eine Versionsbezeichnung eingeben.' : 'Please enter a version label.' }}</small>
+          }
         </label>
         <label class="wide">{{ lang.isGerman() ? 'Beschreibung' : 'Description' }}
           <textarea rows="3" formControlName="version_textarea_description"></textarea>
@@ -126,7 +132,7 @@ interface Row {
         <span class="spacer"></span>
         <button type="button" class="ghost" (click)="back.emit()">{{ lang.isGerman() ? 'Zurück' : 'Back' }}</button>
         @if (!versionRecordId()) {
-          <button class="primary" [disabled]="form.invalid || creating()" (click)="save()">
+          <button class="primary" [disabled]="creating()" (click)="save()">
             {{ creating()
               ? (lang.isGerman() ? 'Wird gespeichert…' : 'Saving…')
               : (lang.isGerman() ? 'Speichern' : 'Save') }}
@@ -158,6 +164,8 @@ export class VersionUploadComponent {
     version_text_field_version_id: ['', Validators.required],
     version_textarea_description: ['']
   });
+  get nameControl() { return this.form.controls.document_version_textfield_name; }
+  get versionIdControl() { return this.form.controls.version_text_field_version_id; }
 
   readonly creating = signal(false);
   readonly createError = signal('');
@@ -199,8 +207,27 @@ export class VersionUploadComponent {
     }
   }
 
+  /** A 'queued' (about to upload) or already-'ok' (uploaded) row is a real attached file — 'error' rows were rejected and never actually attached. */
+  private hasAttachedFile(): boolean {
+    return this.rows().some((r) => r.state === 'queued' || r.state === 'ok');
+  }
+
   save(): void {
-    if (this.form.invalid || this.creating()) return;
+    if (this.creating()) return;
+    // Save is never disabled by validity — clicking it while something's wrong is how the user finds out, instead of a silently-disabled button.
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      this.createError.set(this.lang.isGerman()
+        ? 'Bitte alle Pflichtfelder korrekt ausfüllen, bevor Sie speichern.'
+        : 'Please fill in all required fields correctly before saving.');
+      return;
+    }
+    if (!this.hasAttachedFile()) {
+      this.createError.set(this.lang.isGerman()
+        ? 'Bitte hängen Sie mindestens eine PDF-Datei an, bevor Sie speichern.'
+        : 'Please attach at least one PDF file before saving.');
+      return;
+    }
     this.creating.set(true);
     this.createError.set('');
     this.createPayload.set({

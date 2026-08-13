@@ -4,9 +4,13 @@
           .step-num { color:var(--escriba-teal-700); font-weight:700; } } }
 .subtitle { margin:-14px 0 0; font-size:13px; color:var(--fg-3); }
 
-.grid { display:grid; grid-template-columns:repeat(2, 1fr); gap:20px 24px; }
+.grid {
+  display:grid; grid-template-columns:repeat(2, 1fr); gap:20px 24px;
+  @media (max-width: 700px) { grid-template-columns: 1fr; }
+}
 label { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:600; }
 label.wide { grid-column:1 / -1; }
+label small.field-error { font-weight:600; color:var(--danger, #c0392b); }
 input, textarea {
   font:inherit; font-size:14px; font-weight:400; padding:10px 12px;
   border:1px solid var(--border-1); border-radius:var(--radius-input); background:#fff;
@@ -49,7 +53,7 @@ input, textarea {
 .count { margin:0; font-size:12px; color:var(--fg-3); display:flex; align-items:center; gap:8px;
   b { display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px;
       border-radius:var(--radius-pill); background:var(--bg-2); color:var(--fg-2); font-size:12px; font-weight:700; } }
-footer { display:flex; align-items:center; gap:16px; padding-top:14px; border-top:1px solid var(--border-1); }
+footer { display:flex; flex-wrap:wrap; align-items:center; gap:16px; padding-top:14px; border-top:1px solid var(--border-1); }
 .spacer { flex:1; }
 .primary { border:0; cursor:pointer; font:inherit; font-size:14px; font-weight:600;
            background:var(--escriba-teal); color:var(--navy-900); padding:12px 22px; border-radius:var(--radius-pill); }

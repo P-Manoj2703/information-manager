@@ -10,6 +10,15 @@ import { ACKNOWLEDGEMENT_VIEW_ID, OBJECT_ID } from '@core/objects';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
 import { PagerComponent } from '@shared/ui/pager.component';
 
+/**
+ * documentversion_record's name/displayValue is the full record_locator ("{folder name} -
+ * {version}") — only the part after the last " - " is the version itself, same parsing already
+ * proven for this shape elsewhere (ack-detail.component.ts, task-list.component.ts, etc.).
+ */
+function versionLabelOf(displayValue: string | undefined): string {
+  return (displayValue ?? '').split(' - ').pop() || '';
+}
+
 interface MonitorRow {
   id: string;
   caseNumber: string;
@@ -212,7 +221,7 @@ export class MonitoringComponent {
 
   readonly selected = signal<Set<string>>(new Set());
 
-  readonly pageSize = signal(20);
+  readonly pageSize = signal(10);
   readonly currentPage = signal(1);
 
   readonly pagedRows = computed(() => {
@@ -227,7 +236,7 @@ export class MonitoringComponent {
       employee: raw.acknowledgment_textfield_employee ?? '',
       email: raw.acknowledgment_email_address_email ?? '',
       ownerName: raw.owner_id?.name ?? '',
-      documentVersionLabel: raw.documentversion_record?.name ?? raw.documentversion_record ?? '',
+      documentVersionLabel: versionLabelOf(raw.documentversion_record?.name ?? raw.documentversion_record),
       acknowledgment_picklist_status: (raw.acknowledgment_picklist_status ?? 'None') as AckStatus,
       deadline: raw.acknowledgement_date_deadline_date ?? '',
       folderName: raw.acknowledgement_textfield_information_folder_name ?? ''

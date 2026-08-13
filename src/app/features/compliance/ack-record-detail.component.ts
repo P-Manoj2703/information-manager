@@ -28,12 +28,10 @@ interface AckRecord {
 /**
  * documentversion_record's displayValue is the full record_locator ("{folder name} - {version}")
  * — only the part after the last " - " is the version itself, same parsing already proven for
- * this same "{name} - {version}" shape in version-timeline.component.ts. Shown as "v-{version}"
- * rather than the bare version string, same convention as ack-detail.component.ts's own version.
+ * this same "{name} - {version}" shape in version-timeline.component.ts.
  */
 function versionLabelOf(displayValue: string | undefined): string {
-  const v = (displayValue ?? '').split(' - ').pop() || '';
-  return v ? `v-${v}` : '';
+  return (displayValue ?? '').split(' - ').pop() || '';
 }
 
 /**
@@ -52,7 +50,11 @@ function versionLabelOf(displayValue: string | undefined): string {
  * Also shows the same PdfViewerComponent + document list, and the same "confirm reading" task
  * panel with a real, working Confirm button, that the recipient gets on their own "My
  * Acknowledgments" detail page (ack-detail.component.ts) — same taskId lookup, same
- * PUT .../record/tasks/{taskId}/complete call. But the Confirm button itself is gated to
+ * PUT .../record/tasks/{taskId}/complete call. Compliance is the one exception: per explicit
+ * request they see the document/PDF itself only when the acknowledgement is actually assigned
+ * to them (canSeeDocuments, same assignedUserId check as canConfirm below) — every other
+ * acknowledgement they browse from the chase table shows metadata only. Information Provider
+ * always sees both, regardless of assignment. But the Confirm button itself is gated to
  * assignedUserId === the current session's own user id — same real-world restriction ECAP's own
  * "My User Acknowledgments" view has: an Information Provider can see every acknowledgement
  * generated from their own policies, but can only actually complete the ones assigned to
@@ -158,25 +160,33 @@ function versionLabelOf(displayValue: string | undefined): string {
             }
           </div>
 
-          <div class="full docs-row">
-            <im-pdf-viewer [versionId]="a.documentVersionId" [canDownloadAll]="true"
-                           [(previewDocId)]="selectedDocId" (documentsChange)="documents.set($event)" />
-            @if (documents().length) {
-              <div class="doc-picker">
-                <span class="doc-picker__count">{{ documents().length }} {{ lang.isGerman() ? 'Dokumente' : 'documents' }}</span>
-                <ul class="doc-picker__list">
-                  @for (d of documents(); track d.id) {
-                    <li class="doc-picker__row" [class.doc-picker__row--active]="selectedDocId() === d.id">
-                      <button type="button" class="doc-picker__name" (click)="selectedDocId.set(d.id)">{{ d.name }}</button>
-                      <a class="doc-picker__download" [href]="downloadUrl(a.documentVersionId, d.id)"
-                         [download]="d.name + '.' + d.fileExtension"
-                         [attr.aria-label]="lang.isGerman() ? 'Herunterladen' : 'Download'">⬇</a>
-                    </li>
-                  }
-                </ul>
-              </div>
-            }
-          </div>
+          @if (canSeeDocuments(a)) {
+            <div class="full docs-row">
+              <im-pdf-viewer [versionId]="a.documentVersionId" [canDownloadAll]="true"
+                             [(previewDocId)]="selectedDocId" (documentsChange)="documents.set($event)" />
+              @if (documents().length) {
+                <div class="doc-picker">
+                  <span class="doc-picker__count">{{ documents().length }} {{ lang.isGerman() ? 'Dokumente' : 'documents' }}</span>
+                  <ul class="doc-picker__list">
+                    @for (d of documents(); track d.id) {
+                      <li class="doc-picker__row" [class.doc-picker__row--active]="selectedDocId() === d.id">
+                        <button type="button" class="doc-picker__name" (click)="selectedDocId.set(d.id)">{{ d.name }}</button>
+                        <a class="doc-picker__download" [href]="downloadUrl(a.documentVersionId, d.id)"
+                           [download]="d.name + '.' + d.fileExtension"
+                           [attr.aria-label]="lang.isGerman() ? 'Herunterladen' : 'Download'">⬇</a>
+                      </li>
+                    }
+                  </ul>
+                </div>
+              }
+            </div>
+          } @else {
+            <p class="full missing">
+              {{ lang.isGerman()
+                ? 'Als Compliance-Verantwortlicher sehen Sie das Dokument nur, wenn es Ihnen zugewiesen ist. Diese Kenntnisnahme ist ' + a.acknowledgment_textfield_employee + ' zugewiesen — hier sehen Sie nur die Metadaten.'
+                : 'As compliance officer you only see the document when it is assigned to you. This acknowledgement is assigned to ' + a.acknowledgment_textfield_employee + ' — you only see the metadata here.' }}
+            </p>
+          }
         </div>
       } @else if (!loading()) {
         <p class="missing">
@@ -278,6 +288,16 @@ export class AckRecordDetailComponent {
   /** Only the acknowledgement's real assigned recipient (session userId === owner_id) may complete it here — everyone else gets a read-only view. */
   canConfirm(a: AckRecord): boolean {
     return !!a.taskId && a.assignedUserId === this.session.session().userId;
+  }
+
+  /**
+   * Compliance can browse every acknowledgement from the chase table, but per explicit request
+   * only ever sees the document itself when it's the one actually assigned to them — otherwise
+   * metadata only. Every other role (Information Provider) always sees the document.
+   */
+  canSeeDocuments(a: AckRecord): boolean {
+    if (this.session.role() !== 'complianceverantwortlicher') return true;
+    return a.assignedUserId === this.session.session().userId;
   }
 
   confirm(a: AckRecord): void {

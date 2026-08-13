@@ -433,7 +433,8 @@ export class TemplateBuilderComponent {
   });
 
   private fetchPageWithRetry<T extends { id: string }>(
-    objectId: string, fieldList: string, mapRow: (r: any) => T, page: number, pageSize: number, attempt = 0
+    objectId: string, fieldList: string, mapRow: (r: any) => T, page: number, pageSize: number, attempt = 0,
+    best: { rows: T[]; total: number } | null = null
   ): Observable<{ rows: T[]; total: number }> {
     return this.http.get<any>(`/networking/rest/record/${objectId}`, {
       params: { fieldList, page, pageSize, getTotalRecordCount: true, alt: 'json' }
@@ -444,11 +445,19 @@ export class TemplateBuilderComponent {
       })),
       catchError((err) => { console.error(`Fetch ${objectId} (page ${page}, attempt ${attempt}) failed`, err); return of({ rows: [] as T[], total: 0 }); }),
       switchMap((result) => {
-        const cameBackShort = result.rows.length < pageSize;
+        const total = result.total > 0 ? result.total : (best?.total ?? 0);
+        // A later retry flaking and returning fewer rows than an earlier attempt must never
+        // discard that earlier, fuller result — keep whichever attempt (so far) has the most rows.
+        const better = (!best || result.rows.length > best.rows.length) ? { rows: result.rows, total } : { rows: best.rows, total };
+        // Expected row count comes from the real total, not the fixed pageSize — a small,
+        // already-complete last page (rows < pageSize) previously looked "short" and triggered
+        // pointless retries, one of which could flake and silently lose real rows (see above).
+        const expected = total > 0 ? Math.min(pageSize, total - (page - 1) * pageSize) : pageSize;
+        const cameBackShort = better.rows.length < expected;
         if (cameBackShort && attempt < TemplateBuilderComponent.MAX_RETRIES_PER_PAGE) {
-          return this.fetchPageWithRetry(objectId, fieldList, mapRow, page, pageSize, attempt + 1);
+          return this.fetchPageWithRetry(objectId, fieldList, mapRow, page, pageSize, attempt + 1, better);
         }
-        return of(result);
+        return of(better);
       })
     );
   }

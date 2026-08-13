@@ -60,7 +60,11 @@ import { ActivateDialogComponent } from './activate-dialog.component';
             </label>
             <label>{{ lang.isGerman() ? 'Frist (Tage)' : 'Deadline (days)' }} *
               <input type="number" min="1" formControlName="information_folder_number_deadlinedays" required>
-              <small>{{ lang.isGerman() ? 'Zeit zur Bestätigung, gezählt ab Aktivierung' : 'Time to confirm, counted from activation' }}</small>
+              @if (deadlineDays.invalid && deadlineDays.touched) {
+                <small class="field-error">{{ lang.isGerman() ? 'Bitte eine Zahl ab 1 eingeben.' : 'Please enter a number of days (1 or more).' }}</small>
+              } @else {
+                <small>{{ lang.isGerman() ? 'Zeit zur Bestätigung, gezählt ab Aktivierung' : 'Time to confirm, counted from activation' }}</small>
+              }
             </label>
             <label>{{ lang.isGerman() ? 'Verantwortliches Team' : 'Responsible team' }} *
               <select formControlName="information_folder_lookup_responsible_team" required>
@@ -105,15 +109,21 @@ import { ActivateDialogComponent } from './activate-dialog.component';
             <p class="hint">{{ lang.isGerman()
               ? 'Speichern legt den Ordner im Status „Entwurf" an. Zielgruppe und Version folgen in Schritt 2 und 3 — es werden noch keine Benachrichtigungen versendet.'
               : 'Saving creates the folder in Draft. Audience and version follow in steps 2 and 3 — no notifications are sent yet.' }}</p>
-            <button class="primary" [disabled]="form.invalid || busy()">
+            <button class="primary" [disabled]="busy()">
               {{ busy() ? (lang.isGerman() ? 'Wird gespeichert…' : 'Saving…') : (lang.isGerman() ? 'Speichern und weiter' : 'Save and continue') }}
             </button>
           </footer>
         </form>
     }
-    @if (visitedSteps().has(2)) {
-      <im-audience-builder [style.display]="step() === 2 ? null : 'none'" [folderId]="folderId()" (continue)="onAudienceContinue($event)" (back)="goToStep(1)" />
-    }
+    <!--
+      Mounted unconditionally (not gated by visitedSteps, unlike steps 3/4 below) so its own
+      tenant-wide lookups — Teams, Users, Distribution Templates, all independent of folderId —
+      start fetching immediately in the background while the user is still on Metadata, instead
+      of only starting once they actually click through to this step. The component's own
+      folderId effect (see its constructor) only fires loadLinkedOrgUnits/loadLinkedEmployees
+      once folderId() actually becomes real, so this is safe to render before the folder exists.
+    -->
+    <im-audience-builder [style.display]="step() === 2 ? null : 'none'" [folderId]="folderId()" (continue)="onAudienceContinue($event)" (back)="goToStep(1)" />
     @if (visitedSteps().has(3)) {
       <im-version-upload [style.display]="step() === 3 ? null : 'none'" [folderId]="folderId()" [folderName]="form.getRawValue().information_folder_textfield_name"
                           (continue)="onVersionSaved($event)" (back)="goToStep(2)" />
@@ -236,6 +246,7 @@ export class FolderWizardComponent {
     information_folder_textfield_name: ['', Validators.required],
     information_folder_textfield_short_name: [''],
     information_folder_textfield_description: [''],
+    // this.fb.control(...) rather than the surrounding nonNullable.group's array shorthand: needs to start genuinely empty (null), not a nonNullable default like 0 — see the field's own touched-error message below.
     information_folder_number_deadlinedays: this.fb.control<number | null>(null, [Validators.required, Validators.min(1)]),
     information_folder_lookup_responsible_team: ['', Validators.required],
     information_folder_picklist_confidentiality_level: ['Internal', Validators.required],
@@ -244,6 +255,8 @@ export class FolderWizardComponent {
     information_folder_richtext_area_user_information: ['', Validators.required]
   });
 
+  get deadlineDays() { return this.form.controls.information_folder_number_deadlinedays; }
+
   /**
    * The folder record must only ever be created once — visitedSteps keeps this form mounted
    * (not destroyed) so navigating to Audience and back leaves it fully live. Once folderId is
@@ -251,7 +264,15 @@ export class FolderWizardComponent {
    * that re-submitting the create payload here produced a real duplicate Information Folder.
    */
   saveDraft(): void {
-    if (this.form.invalid || this.busy()) return;
+    if (this.busy()) return;
+    if (this.form.invalid) {
+      // Save is never disabled by validity — clicking it while something's wrong is how the user finds out, instead of a silently-disabled button. markAllAsTouched() surfaces every field's own inline error (e.g. deadlineDays' "Please enter a number of days").
+      this.form.markAllAsTouched();
+      this.createError.set(this.lang.isGerman()
+        ? 'Bitte alle Pflichtfelder korrekt ausfüllen, bevor Sie speichern.'
+        : 'Please fill in all required fields correctly before saving.');
+      return;
+    }
     if (this.folderId()) { this.updateDraft(); return; }
     this.busy.set(true);
     this.createError.set('');

@@ -43,7 +43,7 @@ export class PagerComponent {
 
   /** Two-way. */
   readonly page = model(1);
-  readonly pageSize = model(20);
+  readonly pageSize = model(10);
 
   readonly totalPages = computed(() => Math.max(1, Math.ceil(this.total() / this.pageSize())));
 

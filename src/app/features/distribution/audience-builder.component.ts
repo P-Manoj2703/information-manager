@@ -113,19 +113,14 @@ function isCheckboxActive(val: unknown): boolean {
                 ? 'Teams, einzelne Personen und Verteilervorlagen an einer Stelle.'
                 : 'Teams, individual people and distribution templates in one place.' }}</p>
             </div>
-            <div class="stats" aria-live="polite">
-              <div class="stat">
-                <span class="eyebrow">{{ lang.isGerman() ? 'Organisationseinheiten' : 'Organisational units' }}</span>
-                <strong>{{ linkedOrgUnits().length }}</strong>
-              </div>
-              <div class="stat">
-                <span class="eyebrow">{{ lang.t('users') }}</span>
-                <strong>{{ linkedEmployees().length }}</strong>
-              </div>
-            </div>
           </header>
 
           <div class="panels">
+            <div class="panel-col">
+            <div class="stat" aria-live="polite">
+              <span class="eyebrow">{{ lang.isGerman() ? 'Organisationseinheiten' : 'Organisational units' }}</span>
+              <strong>{{ linkedOrgUnits().length }}</strong>
+            </div>
             <div class="panel">
           <header>
             <span class="panel__title">{{ lang.isGerman() ? 'Organisationseinheiten' : 'Organisational units' }}
@@ -201,7 +196,13 @@ function isCheckboxActive(val: unknown): boolean {
             </div>
           }
         </div>
+        </div>
 
+        <div class="panel-col">
+        <div class="stat" aria-live="polite">
+          <span class="eyebrow">{{ lang.t('users') }}</span>
+          <strong>{{ linkedEmployees().length }}</strong>
+        </div>
         <div class="panel">
           <header>
             <span class="panel__title">{{ lang.t('users') }}
@@ -244,6 +245,7 @@ function isCheckboxActive(val: unknown): boolean {
             }
           </div>
           </div>
+        </div>
         </div>
         </div>
 
@@ -392,7 +394,8 @@ export class AudienceBuilderComponent {
    * of assuming "empty page" means "no more data".
    */
   private fetchPageWithRetry<T extends { id: string }>(
-    objectId: string, fieldList: string, mapRow: (r: any) => T, page: number, pageSize: number, attempt = 0
+    objectId: string, fieldList: string, mapRow: (r: any) => T, page: number, pageSize: number, attempt = 0,
+    best: { rows: T[]; total: number } | null = null
   ): Observable<{ rows: T[]; total: number }> {
     return this.http.get<any>(`/networking/rest/record/${objectId}`, {
       params: { fieldList, page, pageSize, getTotalRecordCount: true, alt: 'json' }
@@ -403,11 +406,19 @@ export class AudienceBuilderComponent {
       })),
       catchError((err) => { console.error(`Fetch ${objectId} (page ${page}, attempt ${attempt}) failed`, err); return of({ rows: [] as T[], total: 0 }); }),
       switchMap((result) => {
-        const cameBackShort = result.rows.length < pageSize;
+        const total = result.total > 0 ? result.total : (best?.total ?? 0);
+        // A later retry flaking and returning fewer rows than an earlier attempt must never
+        // discard that earlier, fuller result — keep whichever attempt (so far) has the most rows.
+        const better = (!best || result.rows.length > best.rows.length) ? { rows: result.rows, total } : { rows: best.rows, total };
+        // Expected row count comes from the real total, not the fixed pageSize — a small,
+        // already-complete last page (rows < pageSize) previously looked "short" and triggered
+        // pointless retries, one of which could flake and silently lose real rows (see above).
+        const expected = total > 0 ? Math.min(pageSize, total - (page - 1) * pageSize) : pageSize;
+        const cameBackShort = better.rows.length < expected;
         if (cameBackShort && attempt < AudienceBuilderComponent.MAX_RETRIES_PER_PAGE) {
-          return this.fetchPageWithRetry(objectId, fieldList, mapRow, page, pageSize, attempt + 1);
+          return this.fetchPageWithRetry(objectId, fieldList, mapRow, page, pageSize, attempt + 1, better);
         }
-        return of(result);
+        return of(better);
       })
     );
   }
@@ -520,12 +531,13 @@ export class AudienceBuilderComponent {
       .filter((t) => !q || t.name.toLowerCase().includes(q));
   });
 
-  /** Real Information Manager Users, minus ones already linked, filtered by the search box. */
+  /** Real Information Manager Users, minus ones already linked or currently being added, filtered by the search box. */
   readonly addableRealUsers = computed(() => {
     const q = this.userQuery().trim().toLowerCase();
     const linkedIds = new Set(this.linkedEmployees().map((e) => e.userId));
+    const pendingIds = this.addingUserIds();
     return this.orgUsers()
-      .filter((u) => !linkedIds.has(u.id))
+      .filter((u) => !linkedIds.has(u.id) && !pendingIds.has(u.id))
       .filter((u) => !q || u.label.toLowerCase().includes(q));
   });
 
@@ -586,7 +598,9 @@ export class AudienceBuilderComponent {
         // descendant team — those only become visible by reading them back from ECAP.
         this.loadLinkedOrgUnits();
         this.teamQuery.set('');
-        this.newUnitIncludeHierarchy.set(false);
+        // Deliberately NOT reset here — the toggle is a persistent choice for this picker
+        // session (e.g. adding several teams in a row, all with hierarchy) until the user
+        // themselves flips it again, not a one-shot flag that silently reverts after each add.
       },
       error: (err) => {
         console.error('Organizational unit create failed', err);
@@ -634,11 +648,15 @@ export class AudienceBuilderComponent {
     });
   }
 
+  /** Users currently mid-add (POST in flight) — kept out of addableRealUsers() so a second click before the server responds can't fire a duplicate create. */
+  private readonly addingUserIds = signal<Set<string>>(new Set());
+
   /** Creates the real Employees child record — ECAP's own server-side rule then creates that user's acknowledgement. */
   addEmployee(userId: string, userLabel: string): void {
     const folderId = this.folderId();
-    if (!folderId) return;
+    if (!folderId || this.addingUserIds().has(userId)) return;
     this.employeeError.set('');
+    this.addingUserIds.update((ids) => new Set(ids).add(userId));
     this.http.post<any>(`/networking/solution/ServiceDesk/record/${OBJECT_ID.employees}`, {
       informationfolder_record: folderId,
       informationmanagerusers_record: userId,
@@ -651,10 +669,12 @@ export class AudienceBuilderComponent {
         const recordId = String(response?.record?.id ?? response?.id ?? '');
         this.linkedEmployees.update((employees) => [...employees, { recordId, userId, userLabel }]);
         this.userQuery.set('');
+        this.addingUserIds.update((ids) => { const next = new Set(ids); next.delete(userId); return next; });
       },
       error: (err) => {
         console.error('Employee create failed', err);
         this.employeeError.set(err?.error?.__exception_msg__ ?? (this.lang.isGerman() ? 'Hinzufügen fehlgeschlagen.' : 'Add failed.'));
+        this.addingUserIds.update((ids) => { const next = new Set(ids); next.delete(userId); return next; });
       }
     });
   }
@@ -683,7 +703,11 @@ export class AudienceBuilderComponent {
    */
   applyTemplate(templateId: string): void {
     const folderId = this.folderId();
-    if (!folderId) return;
+    // templateApplying guards against a second click (same or different template) firing this
+    // multi-step chain again before the first one finishes — a race that previously produced a
+    // real 500 from ECAP (the first apply's task/record state no longer matches what the second,
+    // concurrent chain expects to find).
+    if (!folderId || this.templateApplying()) return;
     this.templateError.set('');
     this.templateApplying.set(true);
 

@@ -40,7 +40,8 @@ interface TemplateRow {
     .spacer { flex: 1; }
     .new { background: var(--escriba-teal); color: var(--navy-900); padding: 11px 20px;
            border-radius: var(--radius-pill); font-weight: 600; white-space: nowrap; }
-    table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--border-1);
+    .scroll { overflow-x: auto; border-radius: var(--radius-card); }
+    table { width:100%; min-width:760px; border-collapse:collapse; background:#fff; border:1px solid var(--border-1);
             border-radius:var(--radius-card); overflow:hidden; }
     th { text-align:left; font-size:11px; font-weight:700; letter-spacing:.08em; color:var(--fg-3);
          background:var(--bg-2); padding:12px 20px; }
@@ -69,6 +70,7 @@ interface TemplateRow {
     @if (loading()) {
       <p class="empty">{{ lang.isGerman() ? 'Vorlagen werden geladen…' : 'Loading templates…' }}</p>
     } @else {
+      <div class="scroll">
       <table>
         <thead>
           <tr>
@@ -112,6 +114,7 @@ interface TemplateRow {
           }
         </tbody>
       </table>
+      </div>
       @if (templates().length) {
         <im-pager [total]="templates().length" [(page)]="currentPage" [(pageSize)]="pageSize" />
       }
@@ -158,7 +161,7 @@ export class TemplateListComponent {
   readonly deleting = signal<string | null>(null);
   readonly actionError = signal<{ templateId: string; message: string } | null>(null);
 
-  readonly pageSize = signal(20);
+  readonly pageSize = signal(10);
   readonly currentPage = signal(1);
 
   readonly pagedTemplates = computed(() => {

@@ -4,7 +4,7 @@
 .card { background:#fff; border:1px solid var(--border-1); border-radius:var(--radius-card);
         padding:26px 28px; display:flex; flex-direction:column; gap:20px; max-width:1080px; }
 
-.head { display:flex; align-items:flex-start; gap:20px; }
+.head { display:flex; flex-wrap:wrap; align-items:flex-start; gap:20px; }
 .name-field {
   flex:1 1 auto; display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:600;
   input { font:inherit; font-size:16px; font-weight:400; padding:10px 12px; max-width:480px;
@@ -84,7 +84,7 @@
   &__team { font-size:11px; color:var(--fg-3); }
 }
 
-footer { display:flex; justify-content:flex-end; align-items:center; gap:12px; padding-top:8px; border-top:1px solid var(--border-1); }
+footer { display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:12px; padding-top:8px; border-top:1px solid var(--border-1); }
 .ghost { border:1px solid var(--border-2); background:#fff; color:var(--fg-2); cursor:pointer;
          font:inherit; font-size:14px; font-weight:600; padding:11px 20px; border-radius:var(--radius-pill);
          &:disabled { opacity:.5; cursor:not-allowed; } }

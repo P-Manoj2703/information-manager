@@ -88,7 +88,18 @@ export const ACKNOWLEDGEMENT_VIEW_ID = {
    *  via network capture), unlike the object's own generic '0' view which has no usable columns.
    *  Row visibility is still enforced server-side by the object's own ACL, so Compliance sees
    *  every record through this view while other roles see only their own scoped subset. */
-  allForCui: '71f36b8fc6d2460e85f961bc221e91f0'
+  allForCui: '71f36b8fc6d2460e85f961bc221e91f0',
+  /**
+   * Three views built specifically for the Compliance officer's own Pending/Overdue/Done
+   * tabs on chase-table.component.ts — confirmed live via network capture of each view's own
+   * ListDataPage response (2026-08-13). Deliberately separate from myPending/myOverdue/
+   * myCompleted above: those are scoped to the current user's own acknowledgements, wrong for
+   * an oversight role that needs to see every pending/overdue/completed record tenant-wide.
+   * Information Provider keeps using myPending/myOverdue/myCompleted unchanged.
+   */
+  compliancePending: '5f33ef9ba04542ce97652a6384e702ac',
+  complianceOverdue: '285005e8308041f6a3100d0e0f8e9a77',
+  complianceCompleted: '8993a126d0194899bfc6252c323ce996'
 } as const;
 
 export const INFORMATION_FOLDER_VIEW_ID = {

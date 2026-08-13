@@ -9,6 +9,15 @@ import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
 import { CompletionBarComponent } from '@shared/ui/completion-bar.component';
 import { FilterChipsComponent, Chip } from '@shared/ui/filter-chips.component';
 
+/**
+ * documentversion_record's name/displayValue is the full record_locator ("{folder name} -
+ * {version}") — only the part after the last " - " is the version itself, same parsing already
+ * proven for this shape elsewhere (ack-detail.component.ts, task-list.component.ts, etc.).
+ */
+function versionLabelOf(displayValue: string | undefined): string {
+  return (displayValue ?? '').split(' - ').pop() || '';
+}
+
 interface FolderTile {
   id: string;
   name: string;
@@ -52,7 +61,7 @@ interface AckRow {
   standalone: true,
   imports: [RouterLink, RecordListDirective, StatusBadgeComponent, CompletionBarComponent, FilterChipsComponent],
   styles: [`
-    .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
     .bar .spacer { margin-left: auto; }
     .bar .count { font-size: 13px; color: var(--fg-3); }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
@@ -160,7 +169,7 @@ export class EstateOverviewComponent {
       const row: AckRow = {
         status: (raw.acknowledgment_picklist_status ?? 'None') as AckStatus,
         deadline: raw.acknowledgement_date_deadline_date ?? '',
-        versionLabel: raw.documentversion_record?.name ?? raw.documentversion_record ?? ''
+        versionLabel: versionLabelOf(raw.documentversion_record?.name ?? raw.documentversion_record)
       };
       byFolder.set(folderName, [...(byFolder.get(folderName) ?? []), row]);
     }

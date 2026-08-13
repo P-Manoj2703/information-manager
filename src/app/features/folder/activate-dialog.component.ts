@@ -48,7 +48,7 @@ import { API_BASE, DOCUMENT_VERSION_ACTIVATE_MACRO_ID, OBJECT_ID } from '@core/o
     .status--warn { background:#fdf6ec; color:#8a5a20; }
     .label { flex:1 1 auto; font-size:14px; color:var(--fg-1); }
     .value { flex:0 0 auto; font-size:14px; color:var(--fg-2); }
-    footer { display:flex; align-items:center; gap:16px; padding-top:8px; }
+    footer { display:flex; flex-wrap:wrap; align-items:center; gap:16px; padding-top:8px; }
     .spacer { flex:1; }
     .overlay { position:fixed; inset:0; background:rgba(20,30,40,.45); display:grid; place-items:center; z-index:100; }
     .modal { background:#fff; border-radius:var(--radius-card); padding:28px 32px; max-width:520px; width:90vw;
