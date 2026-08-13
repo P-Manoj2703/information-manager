@@ -217,7 +217,7 @@ export class FolderDetailComponent {
   readonly saving = signal(false);
   readonly saveError = signal('');
   readonly editForm = this.fb.nonNullable.group({
-    information_folder_number_deadlinedays: [14, [Validators.required, Validators.min(1)]],
+    information_folder_number_deadlinedays: [0, [Validators.required, Validators.min(1)]],
     information_folder_textfield_description: [''],
     information_folder_picklist_confidentiality_level: ['Internal'],
     information_folder_textfield_document_category: [''],

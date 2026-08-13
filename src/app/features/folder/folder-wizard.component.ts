@@ -121,7 +121,7 @@ import { ActivateDialogComponent } from './activate-dialog.component';
     @if (visitedSteps().has(4)) {
       <im-activate-dialog [style.display]="step() === 4 ? null : 'none'" [folderId]="folderId()" [versionId]="versionRecordId()" [teamCount]="teamCount()" [userCount]="userCount()"
                           [confidentialityLevel]="form.getRawValue().information_folder_picklist_confidentiality_level"
-                          [supersedes]="null" [deadlineDays]="form.getRawValue().information_folder_number_deadlinedays" (back)="goToStep(3)" />
+                          [supersedes]="null" [deadlineDays]="form.getRawValue().information_folder_number_deadlinedays ?? 0" (back)="goToStep(3)" />
     }
   `
 })
@@ -236,7 +236,7 @@ export class FolderWizardComponent {
     information_folder_textfield_name: ['', Validators.required],
     information_folder_textfield_short_name: [''],
     information_folder_textfield_description: [''],
-    information_folder_number_deadlinedays: [14, [Validators.required, Validators.min(1)]],
+    information_folder_number_deadlinedays: this.fb.control<number | null>(null, [Validators.required, Validators.min(1)]),
     information_folder_lookup_responsible_team: ['', Validators.required],
     information_folder_picklist_confidentiality_level: ['Internal', Validators.required],
     information_folder_textfield_document_category: [''],
