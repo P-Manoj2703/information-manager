@@ -380,6 +380,11 @@ export class AudienceBuilderComponent {
     { initialValue: [] as OrgUser[] }
   );
 
+  // Reverted back to 20 (2026-08-15): raising this to 200 broke the Teams/Users pickers
+  // entirely (0 results) — this object's own list endpoint apparently can't handle that page
+  // size the way informationManagerTeamsUsers (allTeamLinks below) can. The 160-team cap this
+  // was meant to fix is still real; needs a different fix (e.g. a larger MAX_PAGES at the same
+  // pageSize, or a real network capture of why pageSize:200 fails here) before trying again.
   private static readonly PAGE_SIZE = 20;
   private static readonly MAX_PAGES = 8;
   private static readonly MAX_RETRIES_PER_PAGE = 5;
@@ -492,7 +497,7 @@ export class AudienceBuilderComponent {
     this.fetchAllPaged<{ id: string; teamId: string }>(
       OBJECT_ID.informationManagerTeamsUsers,
       'id,informationmanagerteams_record',
-      (r) => ({ id: r.id, teamId: r.informationmanagerteams_record?.content ?? r.informationmanagerteams_record?.id ?? '' }),
+      (r) => ({ id: r.id, teamId: r.informationmanagerteams_record?.id ?? r.informationmanagerteams_record?.content ?? '' }),
       200
     ),
     { initialValue: [] as { id: string; teamId: string }[] }
@@ -559,7 +564,7 @@ export class AudienceBuilderComponent {
       map((response): LinkedOrgUnit[] =>
         [response?.platform?.record ?? []].flat().map((r: any) => ({
           recordId: r.id,
-          teamId: r.informationmanagerteams_record?.content ?? r.informationmanagerteams_record?.id ?? '',
+          teamId: r.informationmanagerteams_record?.id ?? r.informationmanagerteams_record?.content ?? '',
           teamName: r.informationmanagerteams_record?.displayValue ?? '',
           includeTeamHierarchy: isCheckboxActive(r.imt_if_check_box_include_team_hierarchy),
           lastModifiedTimestamp: ''

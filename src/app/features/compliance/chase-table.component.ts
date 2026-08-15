@@ -22,6 +22,25 @@ function versionLabelOf(displayValue: string | undefined): string {
 }
 
 /**
+ * Real ECAP field names for server-side filtering, confirmed live via network capture
+ * (2026-08-14) against ListDataPage's own `filter` query param:
+ * (field equals 'v1' OR field equals 'v2') AND (field2 equals 'v3'). Folder uses the plain
+ * text mirror field (high confidence, same as Monitoring's own folder filter); status is a
+ * confirmed picklist pattern. documentversion_record is an object/lookup field — filtering by
+ * its display value is a best-effort extension of the pattern, not directly tested.
+ */
+const FILTER_FIELD = {
+  employee: 'acknowledgment_textfield_employee',
+  folder: 'acknowledgement_textfield_information_folder_name',
+  version: 'documentversion_record',
+  status: 'acknowledgment_picklist_status',
+  deadline: 'acknowledgement_date_deadline_date'
+} as const;
+
+/** documentVersionRaw is documentversion_record's own real value (the full record_locator) — needed to filter server-side, since the display field is already stripped down to the short version by mapAck(). */
+interface AckRow extends Acknowledgement { documentVersionRaw: string; }
+
+/**
  * UC-IP-06 / UC-CMP-03. Person-level chase across folders.
  *
  * Real data via libEcapRuntimeRecordList against Acknowledgement's own saved views — the
@@ -51,6 +70,15 @@ function versionLabelOf(displayValue: string | undefined): string {
         (apiErrorEvent)="onAckError($index, $event)">
       </ng-container>
     }
+    <!-- Always unfiltered — feeds the column filter dropdowns' own option lists, so picking a
+         value in one column never shrinks what's selectable in another. -->
+    @for (payload of optionsPayloads(); track $index) {
+      <ng-container
+        [libEcapRuntimeRecordList]="payload"
+        (apiResponseEvent)="onOptionsResponse($index, $event)"
+        (apiErrorEvent)="onOptionsError($index, $event)">
+      </ng-container>
+    }
 
     @if (folderFilter()) {
       <div class="bar filter-banner">
@@ -69,7 +97,11 @@ function versionLabelOf(displayValue: string | undefined): string {
     <div class="scroll">
         <table>
           <thead><tr>
-            <th>{{ lang.isGerman() ? 'Person' : 'Person' }}</th>
+            <th>
+              <im-column-filter [title]="lang.isGerman() ? 'Mitarbeiter' : 'Employee'" [options]="employeeOptions()" [(selected)]="employeeColumnFilter">
+                {{ lang.isGerman() ? 'Mitarbeiter' : 'Employee' }}
+              </im-column-filter>
+            </th>
             <th>
               <im-column-filter [title]="lang.isGerman() ? 'Informationsmappe' : 'Information folder'"
                                  [options]="folderOptions()" [(selected)]="folderColumnFilter">
@@ -81,11 +113,22 @@ function versionLabelOf(displayValue: string | undefined): string {
                 {{ lang.t('version') }}
               </im-column-filter>
             </th>
-            <th>{{ lang.t('deadline') }}</th>
+            <th>
+              <im-column-filter [title]="lang.t('deadline')" [options]="deadlineOptions()" [(selected)]="deadlineColumnFilter">
+                {{ lang.t('deadline') }}
+              </im-column-filter>
+            </th>
             <th>
               <im-column-filter [title]="lang.t('status')" [options]="statusOptions()" [(selected)]="statusColumnFilter">
                 {{ lang.t('status') }}
               </im-column-filter>
+            </th>
+            <th class="reset-col">
+              @if (anyColumnFilterActive()) {
+                <button type="button" class="reset-link" (click)="resetAllColumnFilters()">
+                  {{ lang.isGerman() ? 'Filter zurücksetzen' : 'Reset filters' }}
+                </button>
+              }
             </th>
           </tr></thead>
           <tbody>
@@ -109,9 +152,10 @@ function versionLabelOf(displayValue: string | undefined): string {
                     <small class="late">{{ acks.daysOverdue(a) }} {{ lang.isGerman() ? 'Tage' : 'days' }}</small>
                   }
                 </td>
+                <td></td>
               </tr>
             } @empty {
-              <tr><td colspan="5" class="empty">
+              <tr><td colspan="6" class="empty">
                 {{ loading()
                   ? (lang.isGerman() ? 'Wird geladen…' : 'Loading…')
                   : (lang.isGerman() ? 'Keine Kenntnisnahmen in dieser Ansicht.' : 'No acknowledgements in this view.') }}
@@ -170,15 +214,48 @@ export class ChaseTableComponent {
     }
   });
 
-  readonly payloads = computed<RecordsPayloadMeta[]>(() =>
+  /**
+   * Real server-side filter string, built from whichever columns currently have values
+   * selected — see FILTER_FIELD's own doc comment for the confirmed ECAP syntax. The folder
+   * deep-link (folderFilter) shares the same field as the Information folder column filter, so
+   * its value is folded into that same OR-group rather than a separate AND-block.
+   */
+  private readonly filterQuery = computed(() => {
+    const groups: string[] = [];
+    const addGroup = (field: string, values: string[]) => {
+      const unique = [...new Set(values.filter(Boolean))];
+      if (!unique.length) return;
+      groups.push('(' + unique.map((v) => `${field} equals '${v}'`).join(' OR ') + ')');
+    };
+    addGroup(FILTER_FIELD.employee, this.employeeColumnFilter());
+    addGroup(FILTER_FIELD.folder, [...this.folderColumnFilter(), ...(this.folderFilter() ? [this.folderFilter()] : [])]);
+    addGroup(FILTER_FIELD.version, this.versionColumnFilter());
+    addGroup(FILTER_FIELD.status, this.statusColumnFilter());
+    addGroup(FILTER_FIELD.deadline, this.deadlineColumnFilter());
+    return groups.join(' AND ');
+  });
+
+  readonly payloads = computed<RecordsPayloadMeta[]>(() => {
+    const filter = this.filterQuery();
+    return this.viewIds().map((id) => ({
+      id, object_id: OBJECT_ID.acknowledgement,
+      page: 0, pageSize: 100, sortBy: 'date_modified', sortOrder: 'desc',
+      getTotalRecordCount: false, filter
+    }));
+  });
+
+  /** Same view(s), never filtered — exists only to populate the column filter dropdowns' own option lists. */
+  readonly optionsPayloads = computed<RecordsPayloadMeta[]>(() =>
     this.viewIds().map((id) => ({
       id, object_id: OBJECT_ID.acknowledgement,
       page: 0, pageSize: 100, sortBy: 'date_modified', sortOrder: 'desc',
       getTotalRecordCount: false
     })));
 
-  private readonly ackPartials = signal<Acknowledgement[][]>([]);
+  private readonly ackPartials = signal<AckRow[][]>([]);
   private readonly all = computed(() => this.ackPartials().flat());
+  private readonly optionsPartials = signal<AckRow[][]>([]);
+  private readonly optionsAll = computed(() => this.optionsPartials().flat());
   /** One flag per payload — true once that view has responded (success or error) at least once since the last chip switch. */
   private readonly loaded = signal<boolean[]>([]);
   readonly loading = computed(() => this.loaded().length === 0 || this.loaded().some((l) => !l));
@@ -188,8 +265,9 @@ export class ChaseTableComponent {
 
   constructor() {
     effect(() => {
-      const count = this.payloads().length;
+      const count = this.viewIds().length;
       this.ackPartials.set(Array.from({ length: count }, () => []));
+      this.optionsPartials.set(Array.from({ length: count }, () => []));
       this.loaded.set(Array.from({ length: count }, () => false));
     }, { allowSignalWrites: true });
 
@@ -210,7 +288,8 @@ export class ChaseTableComponent {
     // pager never gets stuck past the new last page.
     effect(() => {
       this.filter(); this.pageSize(); this.folderFilter();
-      this.folderColumnFilter(); this.versionColumnFilter(); this.statusColumnFilter();
+      this.employeeColumnFilter(); this.folderColumnFilter(); this.versionColumnFilter();
+      this.statusColumnFilter(); this.deadlineColumnFilter();
       this.currentPage.set(1);
     }, { allowSignalWrites: true });
   }
@@ -239,6 +318,24 @@ export class ChaseTableComponent {
     this.markLoaded(index);
   }
 
+  onOptionsResponse(index: number, response: RecordsResponseMeta): void {
+    const mapped = (response.listData?.recordsList ?? []).map((raw) => this.mapAck(raw));
+    this.optionsPartials.update((partials) => {
+      const next = [...partials];
+      next[index] = mapped;
+      return next;
+    });
+  }
+
+  onOptionsError(index: number, error: unknown): void {
+    console.error('Failed to load Acknowledgement filter options', error);
+    this.optionsPartials.update((partials) => {
+      const next = [...partials];
+      next[index] = [];
+      return next;
+    });
+  }
+
   private markLoaded(index: number): void {
     this.loaded.update((flags) => {
       const next = [...flags];
@@ -254,7 +351,7 @@ export class ChaseTableComponent {
    * but "ALL ACKNOWLEDGEMENTS for CUI" does expose email, so it's read when present rather than
    * guessed on views that don't have it.
    */
-  private mapAck(raw: any): Acknowledgement {
+  private mapAck(raw: any): AckRow {
     return {
       id: raw.id,
       acknowledgment_picklist_status: (raw.acknowledgment_picklist_status ?? 'None') as AckStatus,
@@ -265,6 +362,7 @@ export class ChaseTableComponent {
       acknowledgement_textfield_information_folder_name:
         raw.acknowledgement_textfield_information_folder_name ?? raw.acknowledgement_lookup_information_folder?.name ?? '',
       documentversion_record: versionLabelOf(raw.documentversion_record?.name ?? raw.documentversion_record),
+      documentVersionRaw: raw.documentversion_record?.name ?? raw.documentversion_record ?? '',
       acknowledgement_date_deadline_date: raw.acknowledgement_date_deadline_date ?? '',
       acknowledgment_richtextarea_user_information: ''
     };
@@ -282,18 +380,43 @@ export class ChaseTableComponent {
   ]);
 
   /** Empty array means "no filter" — every row matches, same convention as im-column-filter's own contract. */
+  readonly employeeColumnFilter = signal<string[]>([]);
   readonly folderColumnFilter = signal<string[]>([]);
   readonly versionColumnFilter = signal<string[]>([]);
   readonly statusColumnFilter = signal<string[]>([]);
+  readonly deadlineColumnFilter = signal<string[]>([]);
 
-  /** Column filter option lists are derived from whatever's actually loaded, not a hardcoded tenant-wide list. */
-  readonly folderOptions = computed<ColumnFilterOption[]>(() => {
-    const names = [...new Set(this.all().map((a) => a.acknowledgement_textfield_information_folder_name).filter(Boolean))].sort();
+  /** Drives the single "Reset filters" link — shown only while at least one column filter is active. */
+  readonly anyColumnFilterActive = computed(() =>
+    !!(this.employeeColumnFilter().length || this.folderColumnFilter().length || this.versionColumnFilter().length
+      || this.statusColumnFilter().length || this.deadlineColumnFilter().length));
+
+  resetAllColumnFilters(): void {
+    this.employeeColumnFilter.set([]);
+    this.folderColumnFilter.set([]);
+    this.versionColumnFilter.set([]);
+    this.statusColumnFilter.set([]);
+    this.deadlineColumnFilter.set([]);
+  }
+
+  /**
+   * Column filter option lists are derived from the unfiltered optionsAll(), not the
+   * server-filtered all() — otherwise picking a value in one column would shrink what's
+   * selectable in the others, since all() only reflects whatever's currently matched.
+   */
+  readonly employeeOptions = computed<ColumnFilterOption[]>(() => {
+    const names = [...new Set(this.optionsAll().map((a) => a.acknowledgment_textfield_employee).filter(Boolean))].sort();
     return names.map((n) => ({ value: n, label: n }));
   });
+  readonly folderOptions = computed<ColumnFilterOption[]>(() => {
+    const names = [...new Set(this.optionsAll().map((a) => a.acknowledgement_textfield_information_folder_name).filter(Boolean))].sort();
+    return names.map((n) => ({ value: n, label: n }));
+  });
+  /** value is the real documentversion_record value (record_locator) — the field ECAP actually filters on — label is the short version shown everywhere else. */
   readonly versionOptions = computed<ColumnFilterOption[]>(() => {
-    const versions = [...new Set(this.all().map((a) => a.documentversion_record).filter(Boolean))].sort();
-    return versions.map((v) => ({ value: v, label: v }));
+    const byRaw = new Map<string, string>();
+    this.optionsAll().forEach((a) => { if (a.documentVersionRaw) byRaw.set(a.documentVersionRaw, a.documentversion_record); });
+    return [...byRaw.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([raw, label]) => ({ value: raw, label }));
   });
   private readonly STATUS_LABEL: Record<AckStatus, [string, string]> = {
     None: ['Keine', 'None'], Pending: ['Offen', 'Pending'], Overdue: ['Überfällig', 'Overdue'],
@@ -302,18 +425,13 @@ export class ChaseTableComponent {
   readonly statusOptions = computed<ColumnFilterOption[]>(() =>
     (['Overdue', 'Pending', 'Done', 'Obsolete', 'None'] as AckStatus[])
       .map((s) => ({ value: s, label: this.STATUS_LABEL[s][this.lang.isGerman() ? 0 : 1] })));
-
-  readonly rows = computed(() => {
-    const folder = this.folderFilter();
-    const folderCol = this.folderColumnFilter();
-    const versionCol = this.versionColumnFilter();
-    const statusCol = this.statusColumnFilter();
-    return this.all()
-      .filter((a) => !folder || a.acknowledgement_textfield_information_folder_name === folder)
-      .filter((a) => !folderCol.length || folderCol.includes(a.acknowledgement_textfield_information_folder_name))
-      .filter((a) => !versionCol.length || versionCol.includes(a.documentversion_record))
-      .filter((a) => !statusCol.length || statusCol.includes(a.acknowledgment_picklist_status));
+  readonly deadlineOptions = computed<ColumnFilterOption[]>(() => {
+    const deadlines = [...new Set(this.optionsAll().map((a) => a.acknowledgement_date_deadline_date).filter(Boolean))].sort();
+    return deadlines.map((d) => ({ value: d, label: d }));
   });
+
+  /** Folder/version/status/deadline filtering (and the folder deep-link) all happen server-side now via filterQuery() — all() already only contains matching rows. */
+  readonly rows = computed(() => this.all());
 
   readonly pagedRows = computed(() => {
     const start = (this.currentPage() - 1) * this.pageSize();

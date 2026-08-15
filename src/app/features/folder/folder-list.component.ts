@@ -15,6 +15,25 @@ import { EmptyStateComponent } from '@shared/ui/empty-state.component';
 import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-filter.component';
 import { PagerComponent } from '@shared/ui/pager.component';
 
+/**
+ * Real ECAP field names for server-side filtering, confirmed live via network capture
+ * (2026-08-14) against ListDataPage's own `filter` query param, on this exact object
+ * (Information_Folder): (field equals 'v1' OR field equals 'v2') AND (field2 equals 'v3') —
+ * one parenthesized OR-group per column with values selected, groups joined by AND.
+ * Confidentiality/status/rollup are picklist fields — the highest-confidence case, since the
+ * captured examples used these exact two fields (status + acknowledgment status). Name is a
+ * plain text field, same confidence as Employee/Folder elsewhere in this app. Responsible team
+ * is the one unverified case here — an object/lookup field, filtered by its display name as a
+ * best-effort extension of the pattern, same caveat as "Version" on the other tabs.
+ */
+const FILTER_FIELD = {
+  name: 'information_folder_textfield_name',
+  confidentiality: 'information_folder_picklist_confidentiality_level',
+  status: 'information_folder_picklist_status',
+  rollup: 'information_folder_picklist_acknowledgment_status',
+  responsibleTeam: 'information_folder_lookup_responsible_team'
+} as const;
+
 /** Saved views from the tenant: My / My Teams × Active / Draft / Inactive. */
 @Component({
   selector: 'im-folder-list',
@@ -30,6 +49,10 @@ import { PagerComponent } from '@shared/ui/pager.component';
             border: 1px solid var(--border-1); border-radius: var(--radius-card); overflow: hidden; }
     th { text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--fg-3);
          background: var(--bg-2); padding: 12px 20px; white-space: nowrap; position: relative; }
+    .reset-col { width: 1%; text-align: right; }
+    .reset-link { border: 0; background: none; cursor: pointer; padding: 0; font: inherit; font-size: 11px;
+                  font-weight: 700; letter-spacing: .04em; color: var(--escriba-teal-700); white-space: nowrap;
+                  &:hover { text-decoration: underline; } }
     td { padding: 18px 20px; border-top: 1px solid var(--border-1); font-size: 14px; vertical-align: top; }
     .name { font-weight: 600; } .sub { font-size: 12px; color: var(--fg-3); margin-top: 4px; }
     .pill { display: inline-flex; align-items: center; border-radius: var(--radius-pill); padding: 3px 10px;
@@ -53,6 +76,14 @@ import { PagerComponent } from '@shared/ui/pager.component';
         (apiErrorEvent)="onFoldersError($index, $event)">
       </ng-container>
     }
+    <!-- Always unfiltered — feeds the Name/Responsible team column filter dropdowns' own option lists. -->
+    @for (payload of optionsPayloads(); track $index) {
+      <ng-container
+        [libEcapRuntimeRecordList]="payload"
+        (apiResponseEvent)="onOptionsResponse($index, $event)"
+        (apiErrorEvent)="onOptionsError($index, $event)">
+      </ng-container>
+    }
     <ng-container [libEcapRuntimeRecordList]="ackPayload()"
       (apiResponseEvent)="onAcksResponse($event)" (apiErrorEvent)="onAcksError($event)">
     </ng-container>
@@ -68,8 +99,17 @@ import { PagerComponent } from '@shared/ui/pager.component';
     <div class="scroll">
     <table>
       <thead><tr>
-        <th>{{ lang.t('folders') }}</th>
-        <th>{{ lang.isGerman() ? 'Verantwortliches Team' : 'Responsible Team' }}</th>
+        <th>
+          <im-column-filter [title]="lang.t('folders')" [options]="nameOptions()" [(selected)]="nameFilter">
+            {{ lang.t('folders') }}
+          </im-column-filter>
+        </th>
+        <th>
+          <im-column-filter [title]="lang.isGerman() ? 'Verantwortliches Team' : 'Responsible Team'"
+                             [options]="responsibleTeamOptions()" [(selected)]="responsibleTeamFilter">
+            {{ lang.isGerman() ? 'Verantwortliches Team' : 'Responsible Team' }}
+          </im-column-filter>
+        </th>
         <th>
           <im-column-filter [title]="lang.isGerman() ? 'Vertraulichkeit' : 'Confidentiality'"
                              [options]="confidentialityOptions" [(selected)]="confidentialityFilter">
@@ -87,7 +127,13 @@ import { PagerComponent } from '@shared/ui/pager.component';
             {{ lang.isGerman() ? 'Kenntnisnahme-Rollup' : 'Acknowledgement roll-up' }}
           </im-column-filter>
         </th>
-        <th></th>
+        <th class="reset-col">
+          @if (anyColumnFilterActive()) {
+            <button type="button" class="reset-link" (click)="resetAllColumnFilters()">
+              {{ lang.isGerman() ? 'Filter zurücksetzen' : 'Reset filters' }}
+            </button>
+          }
+        </th>
       </tr></thead>
       <tbody>
         @for (f of pagedVisible(); track f.id) {
@@ -154,9 +200,24 @@ export class FolderListComponent {
   readonly actionError = signal<{ folderId: string; message: string } | null>(null);
 
   /** Empty array = no filter applied for that column. */
+  readonly nameFilter = signal<string[]>([]);
   readonly confidentialityFilter = signal<string[]>([]);
   readonly statusFilter = signal<string[]>([]);
   readonly rollupFilter = signal<string[]>([]);
+  readonly responsibleTeamFilter = signal<string[]>([]);
+
+  /** Drives the single "Reset filters" link — shown only while at least one column filter is active. */
+  readonly anyColumnFilterActive = computed(() =>
+    !!(this.nameFilter().length || this.confidentialityFilter().length || this.statusFilter().length
+      || this.rollupFilter().length || this.responsibleTeamFilter().length));
+
+  resetAllColumnFilters(): void {
+    this.nameFilter.set([]);
+    this.confidentialityFilter.set([]);
+    this.statusFilter.set([]);
+    this.rollupFilter.set([]);
+    this.responsibleTeamFilter.set([]);
+  }
 
   /**
    * Arriving from Estate Overview's status buckets: ?view=all&rollup=Pending pre-selects the
@@ -174,15 +235,17 @@ export class FolderListComponent {
     }, { allowSignalWrites: true });
 
     effect(() => {
-      const count = this.payloads().length;
+      const count = this.viewIds().length;
       this.folderPartials.set(Array.from({ length: count }, () => []));
+      this.optionsPartials.set(Array.from({ length: count }, () => []));
       this.loaded.set(Array.from({ length: count }, () => false));
     }, { allowSignalWrites: true });
 
     // Any change that could shrink or reorder the visible set should land back on page 1 —
     // otherwise switching tabs/filters can leave the pager stuck past the new last page.
     effect(() => {
-      this.view(); this.confidentialityFilter(); this.statusFilter(); this.rollupFilter();
+      this.view(); this.nameFilter(); this.confidentialityFilter(); this.statusFilter();
+      this.rollupFilter(); this.responsibleTeamFilter();
       this.pageSize();
       this.currentPage.set(1);
     }, { allowSignalWrites: true });
@@ -201,9 +264,11 @@ export class FolderListComponent {
    * clearing them on every `view` write would immediately wipe that intentional deep-link filter.
    */
   selectView(id: string): void {
+    this.nameFilter.set([]);
     this.confidentialityFilter.set([]);
     this.statusFilter.set([]);
     this.rollupFilter.set([]);
+    this.responsibleTeamFilter.set([]);
     this.view.set(this.view() === id ? 'all' : id);
   }
 
@@ -252,8 +317,40 @@ export class FolderListComponent {
     }
   });
 
-  /** New object references each time (view change or refreshTick bump) so the directive's ngOnChanges refetches. */
+  /**
+   * Real server-side filter string, built from whichever columns currently have values
+   * selected — see FILTER_FIELD's own doc comment for the confirmed ECAP syntax.
+   * Confidentiality/status/rollup use a fixed, hardcoded option list, but Name and Responsible
+   * team don't — those two need the separate unfiltered optionsAll() fetch below so picking a
+   * value in one column doesn't shrink what's selectable in the others.
+   */
+  private readonly filterQuery = computed(() => {
+    const groups: string[] = [];
+    const addGroup = (field: string, values: string[]) => {
+      if (!values.length) return;
+      groups.push('(' + values.map((v) => `${field} equals '${v}'`).join(' OR ') + ')');
+    };
+    addGroup(FILTER_FIELD.name, this.nameFilter());
+    addGroup(FILTER_FIELD.confidentiality, this.confidentialityFilter());
+    addGroup(FILTER_FIELD.status, this.statusFilter());
+    addGroup(FILTER_FIELD.rollup, this.rollupFilter());
+    addGroup(FILTER_FIELD.responsibleTeam, this.responsibleTeamFilter());
+    return groups.join(' AND ');
+  });
+
+  /** New object references each time (view, filter, or refreshTick changes) so the directive's ngOnChanges refetches. */
   readonly payloads = computed<RecordsPayloadMeta[]>(() => {
+    this.refreshTick();
+    const filter = this.filterQuery();
+    return this.viewIds().map((id) => ({
+      id, object_id: OBJECT_ID.informationFolder,
+      page: 0, pageSize: 100, sortBy: 'date_modified', sortOrder: 'desc',
+      getTotalRecordCount: false, filter
+    }));
+  });
+
+  /** Same view(s), never filtered — exists only to populate the Name/Responsible team column filter dropdowns' own option lists. */
+  readonly optionsPayloads = computed<RecordsPayloadMeta[]>(() => {
     this.refreshTick();
     return this.viewIds().map((id) => ({
       id, object_id: OBJECT_ID.informationFolder,
@@ -265,9 +362,20 @@ export class FolderListComponent {
   /** One slot per payload; merged into `all` below. Reset whenever the set of payloads changes. */
   private readonly folderPartials = signal<InformationFolder[][]>([]);
   private readonly all = computed(() => this.folderPartials().flat());
+  private readonly optionsPartials = signal<InformationFolder[][]>([]);
+  private readonly optionsAll = computed(() => this.optionsPartials().flat());
   /** One flag per payload — true once that view has responded (success or error) at least once since the last tab switch. */
   private readonly loaded = signal<boolean[]>([]);
   readonly loading = computed(() => this.loaded().length === 0 || this.loaded().some((l) => !l));
+
+  readonly nameOptions = computed<ColumnFilterOption[]>(() => {
+    const names = [...new Set(this.optionsAll().map((f) => f.information_folder_textfield_name).filter(Boolean))].sort();
+    return names.map((n) => ({ value: n, label: n }));
+  });
+  readonly responsibleTeamOptions = computed<ColumnFilterOption[]>(() => {
+    const names = [...new Set(this.optionsAll().map((f) => f.responsibleTeamName).filter((n): n is string => !!n))].sort();
+    return names.map((n) => ({ value: n, label: n }));
+  });
 
   private readonly emptyRetryCount = signal(0);
   private retryScheduled = false;
@@ -307,6 +415,24 @@ export class FolderListComponent {
       return next;
     });
     this.markLoaded(index);
+  }
+
+  onOptionsResponse(index: number, response: RecordsResponseMeta): void {
+    const mapped = (response.listData?.recordsList ?? []).map((raw) => this.mapFolder(raw));
+    this.optionsPartials.update((partials) => {
+      const next = [...partials];
+      next[index] = mapped;
+      return next;
+    });
+  }
+
+  onOptionsError(index: number, error: unknown): void {
+    console.error('Failed to load Information Folder filter options', error);
+    this.optionsPartials.update((partials) => {
+      const next = [...partials];
+      next[index] = [];
+      return next;
+    });
   }
 
   private markLoaded(index: number): void {
@@ -392,18 +518,11 @@ export class FolderListComponent {
    * but broke silently: view '0' doesn't return created_id or the hidden Primary Team Id
    * field at all, so every row read as undefined !== userId and got dropped despite ECAP
    * having already returned exactly the rows this user is allowed to see.
+   *
+   * Confidentiality/Status/Roll-up are no longer re-filtered here either — payloads() now
+   * sends the real filter string to ECAP itself, so `all()` already only contains matching rows.
    */
-  readonly visible = computed(() => {
-    const byView = this.all();
-
-    const conf = this.confidentialityFilter();
-    const status = this.statusFilter();
-    const rollup = this.rollupFilter();
-    return byView.filter((f) =>
-      (!conf.length || conf.includes(f.information_folder_picklist_confidentiality_level)) &&
-      (!status.length || status.includes(f.information_folder_picklist_status)) &&
-      (!rollup.length || rollup.includes(f.information_folder_picklist_acknowledgment_status)));
-  });
+  readonly visible = computed(() => this.all());
 
   deactivate(folderId: string): void {
     this.busy.set(folderId);

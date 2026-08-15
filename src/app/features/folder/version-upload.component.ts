@@ -3,6 +3,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { RecordCreateDirective } from '@escriba/cui-ecap-runtime';
 import { catchError, map, of, switchMap } from 'rxjs';
+type VersionFormValue = { document_version_textfield_name: string; version_text_field_version_id: string; version_textarea_description: string };
 import { SessionService } from '@core/services/session.service';
 import { LanguageService } from '@core/i18n/language.service';
 import { SERVER_MESSAGE } from '@core/server-messages';
@@ -130,12 +131,18 @@ interface Row {
 
       <footer>
         <span class="spacer"></span>
-        <button type="button" class="ghost" (click)="back.emit()">{{ lang.isGerman() ? 'Zurück' : 'Back' }}</button>
+        <button type="button" class="ghost" (click)="onBackClick()">{{ lang.isGerman() ? 'Zurück' : 'Back' }}</button>
         @if (!versionRecordId()) {
           <button class="primary" [disabled]="creating()" (click)="save()">
             {{ creating()
               ? (lang.isGerman() ? 'Wird gespeichert…' : 'Saving…')
               : (lang.isGerman() ? 'Speichern' : 'Save') }}
+          </button>
+        } @else if (editingVersion()) {
+          <button class="primary" [disabled]="updating()" (click)="saveChanges()">
+            {{ updating()
+              ? (lang.isGerman() ? 'Wird gespeichert…' : 'Saving…')
+              : (lang.isGerman() ? 'Änderungen speichern' : 'Save changes') }}
           </button>
         } @else {
           <button class="primary" (click)="continue.emit(versionRecordId() ?? '')">{{ lang.isGerman() ? 'Weiter zur Veröffentlichung' : 'Continue to publish' }}</button>
@@ -174,6 +181,12 @@ export class VersionUploadComponent {
   readonly versionRecordId = signal<string | null>(null);
   /** The record's own DMS "Root Folder" id (recordFolderTree), required by the finalize upload call. */
   readonly rootFolderId = signal<string | null>(null);
+
+  /** True while the user is (re-)editing Name/Version/Description for an already-saved version, reached via the Back button. */
+  readonly editingVersion = signal(false);
+  readonly updating = signal(false);
+  /** Last known-saved field values — restores the form on an implicit cancel (Back while editing) instead of leaving whatever was mid-typed. */
+  private readonly savedFormValue = signal<VersionFormValue | null>(null);
 
   readonly folderActivating = signal(false);
   readonly folderActivated = signal(false);
@@ -252,9 +265,11 @@ export class VersionUploadComponent {
     this.createPayload.set(null);
     const id = String(response?.record?.id ?? response?.id ?? '');
     this.versionRecordId.set(id);
-    // Name/Version ID/Description stay editable while Draft in ECAP's own Default Layout rules,
-    // but re-saving them isn't part of this flow yet — lock them once the record exists.
+    // Name/Version ID/Description stay editable while Draft in ECAP's own Default Layout rules.
+    // Locked here by default once the record exists — the Back button (see onBackClick) is the
+    // way back into editing them, mirroring Distribution Template's "Back to edit meta" pattern.
     this.form.disable();
+    this.savedFormValue.set(this.form.getRawValue());
 
     this.http.get<any>(`/networking/solution/ServiceDesk/recordFolderTree/${OBJECT_ID.documentVersion}/${id}`, {
       params: { docCount: true }
@@ -301,6 +316,77 @@ export class VersionUploadComponent {
     this.creating.set(false);
     this.createPayload.set(null);
     this.createError.set(error.error?.__exception_msg__ ?? (this.lang.isGerman() ? 'Speichern fehlgeschlagen.' : 'Save failed.'));
+  }
+
+  /**
+   * Context-aware Back: while the version is locked (already saved), the first click only
+   * unlocks Name/Version/Description for editing and stays on this step. A second click —
+   * now mid-edit, nothing left to unlock — discards any unsaved changes back to the last
+   * saved values and actually leaves to the Audience step. Before the first save (no
+   * versionRecordId yet, nothing ever locked), a single click leaves immediately, unchanged
+   * from the previous behaviour.
+   */
+  onBackClick(): void {
+    if (this.versionRecordId() && !this.editingVersion()) {
+      this.createError.set('');
+      this.form.enable();
+      this.editingVersion.set(true);
+      return;
+    }
+    if (this.editingVersion()) {
+      const saved = this.savedFormValue();
+      if (saved) this.form.reset(saved);
+      this.form.disable();
+      this.editingVersion.set(false);
+      this.createError.set('');
+    }
+    this.back.emit();
+  }
+
+  /**
+   * Real update of the already-saved version — PUT, not PATCH: PATCH is silently accepted
+   * (200/success body) but never actually persists on this tenant, same issue confirmed on
+   * Information Folder's and Distribution Template's own updates. Fetches the record's
+   * current last_modified_timestamp (ECAP's optimistic-concurrency token) first, same
+   * two-step pattern used there too.
+   */
+  saveChanges(): void {
+    const versionId = this.versionRecordId();
+    if (!versionId || this.updating()) return;
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      this.createError.set(this.lang.isGerman()
+        ? 'Bitte alle Pflichtfelder korrekt ausfüllen, bevor Sie speichern.'
+        : 'Please fill in all required fields correctly before saving.');
+      return;
+    }
+    this.updating.set(true);
+    this.createError.set('');
+    const value = this.form.getRawValue();
+    this.http.get<any>(`/networking/rest/record/${OBJECT_ID.documentVersion}/${versionId}`, {
+      params: { fieldList: 'last_modified_timestamp', alt: 'json' }
+    }).pipe(
+      switchMap((response) => {
+        const lastModifiedTimestamp = response?.platform?.record?.last_modified_timestamp ?? '';
+        return this.http.put<any>(`/networking/solution/ServiceDesk/record/${OBJECT_ID.documentVersion}/${versionId}`, {
+          ...value,
+          layout_id: DOCUMENT_VERSION_LAYOUT_ID,
+          last_modified_timestamp: lastModifiedTimestamp
+        });
+      })
+    ).subscribe({
+      next: () => {
+        this.updating.set(false);
+        this.savedFormValue.set(value);
+        this.form.disable();
+        this.editingVersion.set(false);
+      },
+      error: (err) => {
+        console.error('Update document version failed', err);
+        this.updating.set(false);
+        this.createError.set(err?.error?.__exception_msg__ ?? (this.lang.isGerman() ? 'Aktualisierung fehlgeschlagen.' : 'Update failed.'));
+      }
+    });
   }
 
   onDrop(e: DragEvent): void { e.preventDefault(); this.add(Array.from(e.dataTransfer?.files ?? [])); }

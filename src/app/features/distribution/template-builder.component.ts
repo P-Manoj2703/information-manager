@@ -14,7 +14,6 @@ interface OrgUser { id: string; label: string; }
 
 interface LinkedTeam {
   recordId: string; teamId: string; teamName: string; includeTeamHierarchy: boolean;
-  lastModifiedTimestamp: string;
 }
 interface LinkedUser { recordId: string; userId: string; userLabel: string; }
 
@@ -74,10 +73,10 @@ const DISTRIBUTION_LIST_LAYOUT_ID = 'cb599bfbc9dd4071b81f31afd10663ca';
       <header class="head">
         <label class="name-field">
           {{ lang.isGerman() ? 'Name der Vorlage' : 'Template name' }} *
-          <input [value]="name()" [disabled]="!!templateId()" (input)="name.set($any($event.target).value)"
+          <input [value]="name()" (input)="name.set($any($event.target).value)"
                  [placeholder]="lang.isGerman() ? 'z. B. Alle Standorte DACH' : 'e.g. All DACH locations'">
         </label>
-        @if (templateId()) {
+        @if (templateId() && !editingMeta()) {
           <div class="stats" aria-live="polite">
             <div class="stat">
               <span class="eyebrow">{{ lang.isGerman() ? 'Organisationseinheiten' : 'Organisational units' }}</span>
@@ -93,13 +92,17 @@ const DISTRIBUTION_LIST_LAYOUT_ID = 'cb599bfbc9dd4071b81f31afd10663ca';
 
       @if (createError()) { <p class="error">{{ createError() }}</p> }
 
-      @if (!templateId()) {
+      @if (!templateId() || editingMeta()) {
         <label class="name-field">
           {{ lang.isGerman() ? 'Beschreibung' : 'Description' }}
           <input [value]="description()" (input)="description.set($any($event.target).value)">
         </label>
         <footer>
-          <a class="ghost" routerLink="/templates">{{ lang.isGerman() ? 'Abbrechen' : 'Cancel' }}</a>
+          @if (templateId()) {
+            <button type="button" class="ghost" (click)="cancelEditMeta()">{{ lang.isGerman() ? 'Abbrechen' : 'Cancel' }}</button>
+          } @else {
+            <a class="ghost" routerLink="/templates">{{ lang.isGerman() ? 'Abbrechen' : 'Cancel' }}</a>
+          }
           <button type="button" class="primary" [disabled]="!name().trim() || creating()" (click)="save()">
             {{ creating() ? (lang.isGerman() ? 'Wird gespeichert…' : 'Saving…') : (lang.isGerman() ? 'Speichern' : 'Save') }}
           </button>
@@ -134,9 +137,8 @@ const DISTRIBUTION_LIST_LAYOUT_ID = 'cb599bfbc9dd4071b81f31afd10663ca';
                       }
                     </small>
                   </div>
-                  <label class="switch" [class.switch--locked]="t.includeTeamHierarchy">
-                    <input type="checkbox" class="switch__input" [checked]="t.includeTeamHierarchy"
-                           [disabled]="t.includeTeamHierarchy" (change)="enableHierarchy(t)">
+                  <label class="switch switch--locked" [attr.title]="lang.isGerman() ? 'Nur bei Hinzufügen wählbar' : 'Only selectable when adding'">
+                    <input type="checkbox" class="switch__input" [checked]="t.includeTeamHierarchy" disabled>
                     <span class="switch__track" [class.switch__track--on]="t.includeTeamHierarchy">
                       <span class="switch__thumb"></span>
                     </span>
@@ -227,6 +229,7 @@ const DISTRIBUTION_LIST_LAYOUT_ID = 'cb599bfbc9dd4071b81f31afd10663ca';
         </div>
 
         <footer>
+          <button type="button" class="ghost" (click)="backToEditMeta()">{{ lang.isGerman() ? 'Zurück' : 'Back' }}</button>
           <a class="primary" routerLink="/templates">{{ lang.isGerman() ? 'Fertig' : 'Done' }}</a>
         </footer>
       }
@@ -244,6 +247,11 @@ export class TemplateBuilderComponent {
   readonly name = signal('');
   readonly description = signal('');
   readonly templateId = signal<string | null>(null);
+  /** True while the user is (re-)editing Name/Description for an already-created template, reached via the Back button. */
+  readonly editingMeta = signal(false);
+  /** Last known-saved values — restores name()/description() on Cancel instead of leaving whatever was mid-typed. */
+  private readonly savedName = signal('');
+  private readonly savedDescription = signal('');
 
   readonly creating = signal(false);
   readonly createError = signal('');
@@ -271,15 +279,35 @@ export class TemplateBuilderComponent {
       catchError((err) => { console.error('Template fetch failed', err); return of(null); })
     ).subscribe((r) => {
       if (!r) return;
-      this.name.set(r.distribution_list_tf_distribution_list_name ?? '');
-      this.description.set(r.distribution_list_ta_description ?? '');
+      const name = r.distribution_list_tf_distribution_list_name ?? '';
+      const description = r.distribution_list_ta_description ?? '';
+      this.name.set(name);
+      this.description.set(description);
+      this.savedName.set(name);
+      this.savedDescription.set(description);
     });
     this.loadLinkedTeams(templateId);
     this.loadLinkedUsers(templateId);
   }
 
+  /** Reached from the Organisational Units/Users screen — re-enables the Name/Description form without touching already-linked teams/users. */
+  backToEditMeta(): void {
+    this.createError.set('');
+    this.editingMeta.set(true);
+  }
+
+  /** Discards unsaved edits and returns to the Organisational Units/Users screen — the record itself is untouched. */
+  cancelEditMeta(): void {
+    this.name.set(this.savedName());
+    this.description.set(this.savedDescription());
+    this.createError.set('');
+    this.editingMeta.set(false);
+  }
+
   save(): void {
     if (!this.name().trim() || this.creating()) return;
+    const templateId = this.templateId();
+    if (templateId) { this.updateMeta(templateId); return; }
     this.creating.set(true);
     this.createError.set('');
     this.createPayload.set({
@@ -297,6 +325,8 @@ export class TemplateBuilderComponent {
     this.createPayload.set(null);
     const newId = String(response?.record?.id ?? response?.id ?? '');
     this.templateId.set(newId);
+    this.savedName.set(this.name().trim());
+    this.savedDescription.set(this.description().trim());
     this.loadLinkedTeams(newId);
     this.loadLinkedUsers(newId);
   }
@@ -305,6 +335,42 @@ export class TemplateBuilderComponent {
     this.creating.set(false);
     this.createPayload.set(null);
     this.createError.set(error?.error?.__exception_msg__ ?? (this.lang.isGerman() ? 'Speichern fehlgeschlagen.' : 'Save failed.'));
+  }
+
+  /**
+   * Real update of the already-created template — PUT, not PATCH: PATCH is silently accepted
+   * (200/success body) but never actually persists on this tenant, same issue confirmed on
+   * Information Folder's own update. Fetches the record's current last_modified_timestamp
+   * (ECAP's optimistic-concurrency token) first, same two-step pattern used there too.
+   */
+  private updateMeta(templateId: string): void {
+    this.creating.set(true);
+    this.createError.set('');
+    this.http.get<any>(`/networking/rest/record/${OBJECT_ID.distributionTemplate}/${templateId}`, {
+      params: { fieldList: 'last_modified_timestamp', alt: 'json' }
+    }).pipe(
+      switchMap((response) => {
+        const lastModifiedTimestamp = response?.platform?.record?.last_modified_timestamp ?? '';
+        return this.http.put<any>(`/networking/solution/ServiceDesk/record/${OBJECT_ID.distributionTemplate}/${templateId}`, {
+          distribution_list_tf_distribution_list_name: this.name().trim(),
+          distribution_list_ta_description: this.description().trim(),
+          layout_id: DISTRIBUTION_LIST_LAYOUT_ID,
+          last_modified_timestamp: lastModifiedTimestamp
+        });
+      })
+    ).subscribe({
+      next: () => {
+        this.creating.set(false);
+        this.savedName.set(this.name().trim());
+        this.savedDescription.set(this.description().trim());
+        this.editingMeta.set(false);
+      },
+      error: (err) => {
+        console.error('Update template failed', err);
+        this.creating.set(false);
+        this.createError.set(err?.error?.platform?.message?.description ?? err?.error?.__exception_msg__ ?? (this.lang.isGerman() ? 'Speichern fehlgeschlagen.' : 'Save failed.'));
+      }
+    });
   }
 
   readonly teamQuery = signal('');
@@ -320,6 +386,11 @@ export class TemplateBuilderComponent {
   readonly teamsLoading = signal(true);
   readonly usersLoading = signal(true);
 
+  // Reverted back to 20 (2026-08-15): raising this to 200 broke the Teams/Users pickers
+  // entirely (0 results) — this object's own list endpoint apparently can't handle that page
+  // size the way informationManagerTeamsUsers (allTeamLinks below) can. The 160-team cap this
+  // was meant to fix is still real; needs a different fix (e.g. a larger MAX_PAGES at the same
+  // pageSize, or a real network capture of why pageSize:200 fails here) before trying again.
   private static readonly PAGE_SIZE = 20;
   private static readonly MAX_PAGES = 8;
   private static readonly MAX_RETRIES_PER_PAGE = 5;
@@ -396,7 +467,7 @@ export class TemplateBuilderComponent {
     this.fetchAllPaged<{ id: string; teamId: string }>(
       OBJECT_ID.informationManagerTeamsUsers,
       'id,informationmanagerteams_record',
-      (r) => ({ id: r.id, teamId: r.informationmanagerteams_record?.content ?? r.informationmanagerteams_record?.id ?? '' }),
+      (r) => ({ id: r.id, teamId: r.informationmanagerteams_record?.id ?? r.informationmanagerteams_record?.content ?? '' }),
       200
     ),
     { initialValue: [] as { id: string; teamId: string }[] }
@@ -491,7 +562,8 @@ export class TemplateBuilderComponent {
         filter: `(distributionlist_record equals '${templateId}')`,
         // last_modified_timestamp deliberately left out — requesting it here 400s this
         // particular object's list query outright (confirmed live), unlike Information Folder
-        // where it's a normal field. enableHierarchy fetches it separately, only when needed.
+        // where it's a normal field. Hierarchy itself is locked once saved — see the row's own
+        // switch in the template — so this value is never written back after being read here.
         fieldList: 'id,teams_record,distribution_list_teams_cb_include_team_hierarchy',
         alt: 'json'
       }
@@ -499,42 +571,12 @@ export class TemplateBuilderComponent {
       map((response): LinkedTeam[] =>
         [response?.platform?.record ?? []].flat().map((r: any) => ({
           recordId: r.id,
-          teamId: r.teams_record?.content ?? r.teams_record?.id ?? '',
+          teamId: r.teams_record?.id ?? r.teams_record?.content ?? '',
           teamName: r.teams_record?.displayValue ?? '',
-          includeTeamHierarchy: isCheckboxActive(r.distribution_list_teams_cb_include_team_hierarchy),
-          lastModifiedTimestamp: ''
+          includeTeamHierarchy: isCheckboxActive(r.distribution_list_teams_cb_include_team_hierarchy)
         }))),
       catchError((err) => { console.error('Linked teams fetch failed', err); return of([] as LinkedTeam[]); })
     ).subscribe((teams) => this.linkedTeams.set(teams));
-  }
-
-  /** Same one-way pattern as the folder's own Audience panel: only false → true, never back off. */
-  enableHierarchy(team: LinkedTeam): void {
-    if (team.includeTeamHierarchy) return;
-    this.teamError.set('');
-    this.http.get<any>(`/networking/rest/record/${DISTRIBUTION_LIST_TEAMS_OBJECT}/${team.recordId}`, {
-      params: { fieldList: 'last_modified_timestamp', alt: 'json' }
-    }).pipe(
-      switchMap((response) => {
-        const lastModifiedTimestamp = response?.platform?.record?.last_modified_timestamp ?? '';
-        // PUT, not PATCH: PATCH is silently accepted (200/success body) but never actually
-        // persists on this tenant — same issue confirmed on Information Folder's own update.
-        return this.http.put<any>(`/networking/solution/ServiceDesk/record/${DISTRIBUTION_LIST_TEAMS_OBJECT}/${team.recordId}`, {
-          distribution_list_teams_cb_include_team_hierarchy: '1',
-          layout_id: DISTRIBUTION_LIST_TEAMS_LAYOUT_ID,
-          last_modified_timestamp: lastModifiedTimestamp
-        });
-      })
-    ).subscribe({
-      next: () => {
-        this.linkedTeams.update((teams) =>
-          teams.map((t) => t.recordId === team.recordId ? { ...t, includeTeamHierarchy: true } : t));
-      },
-      error: (err) => {
-        console.error('Template team hierarchy update failed', err);
-        this.teamError.set(err?.error?.__exception_msg__ ?? (this.lang.isGerman() ? 'Aktualisierung fehlgeschlagen.' : 'Update failed.'));
-      }
-    });
   }
 
   /** Creates the real Distribution_List_Teams row immediately — same immediate-persist pattern as AudienceBuilderComponent's addOrgUnit. */
@@ -558,7 +600,9 @@ export class TemplateBuilderComponent {
         // only become visible by reading them back from ECAP.
         this.loadLinkedTeams(templateId);
         this.teamQuery.set('');
-        this.newTeamIncludeHierarchy.set(false);
+        // Deliberately NOT reset here — the toggle is a persistent choice for this picker
+        // session (e.g. adding several teams in a row, all with hierarchy) until the user
+        // themselves flips it again, not a one-shot flag that silently reverts after each add.
       },
       error: (err) => {
         console.error('Add team failed', teamName, err);

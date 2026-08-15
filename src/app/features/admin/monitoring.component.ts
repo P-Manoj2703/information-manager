@@ -9,6 +9,7 @@ import { LanguageService } from '@core/i18n/language.service';
 import { ACKNOWLEDGEMENT_VIEW_ID, OBJECT_ID } from '@core/objects';
 import { StatusBadgeComponent } from '@shared/ui/status-badge.component';
 import { PagerComponent } from '@shared/ui/pager.component';
+import { ColumnFilterComponent, ColumnFilterOption } from '@shared/ui/column-filter.component';
 
 /**
  * documentversion_record's name/displayValue is the full record_locator ("{folder name} -
@@ -27,6 +28,8 @@ interface MonitorRow {
   /** Greeting name for the reminder email — the record's owner_id.name, not the employee text field. */
   ownerName: string;
   documentVersionLabel: string;
+  /** documentversion_record's own real value (the full record_locator) — needed to filter server-side, since ECAP has no separate short-version field to filter on. */
+  documentVersionRaw: string;
   acknowledgment_picklist_status: AckStatus;
   /** MM/DD/YYYY, as ListDataPage and the record-update endpoint both use for this object. */
   deadline: string;
@@ -34,6 +37,25 @@ interface MonitorRow {
 }
 
 const STATUS_OPTIONS: AckStatus[] = ['Pending', 'Overdue', 'Done', 'Obsolete', 'None'];
+
+/**
+ * Real ECAP field names for server-side filtering, confirmed live via network capture
+ * (2026-08-14) against ListDataPage's own `filter` query param:
+ *   (field equals 'v1' OR field equals 'v2') AND (field2 equals 'v3')
+ * — one parenthesized OR-group per column with values selected, groups joined by AND.
+ * Employee/folder use the plain text mirror fields (same confidence as the picklist fields
+ * below, and the same pattern already proven elsewhere in this codebase for exact-match
+ * filters). documentversion_record is the one genuinely unverified case here — it's an
+ * object/lookup field, not text or picklist, so equals-matching its display value is a
+ * best-effort extension of the confirmed pattern, not a tested one.
+ */
+const FILTER_FIELD = {
+  employee: 'acknowledgment_textfield_employee',
+  folder: 'acknowledgement_textfield_information_folder_name',
+  version: 'documentversion_record',
+  status: 'acknowledgment_picklist_status',
+  deadline: 'acknowledgement_date_deadline_date'
+} as const;
 
 /**
  * The real "Monitoring" JSP page in native ECAP embeds a separate Angular app — confirmed
@@ -64,7 +86,7 @@ const STATUS_OPTIONS: AckStatus[] = ['Pending', 'Overdue', 'Done', 'Obsolete', '
 @Component({
   selector: 'im-monitoring',
   standalone: true,
-  imports: [RouterLink, FormsModule, RecordListDirective, StatusBadgeComponent, PagerComponent],
+  imports: [RouterLink, FormsModule, RecordListDirective, StatusBadgeComponent, PagerComponent, ColumnFilterComponent],
   styleUrl: './monitoring.component.scss',
   template: `
     @for (payload of payloads(); track $index) {
@@ -74,6 +96,13 @@ const STATUS_OPTIONS: AckStatus[] = ['Pending', 'Overdue', 'Done', 'Obsolete', '
         (apiErrorEvent)="onError($event)">
       </ng-container>
     }
+    <!-- Always unfiltered — feeds the column filter dropdowns' own option lists, so picking a
+         value in one column never shrinks what's selectable in another. -->
+    <ng-container
+      [libEcapRuntimeRecordList]="optionsPayload()"
+      (apiResponseEvent)="onOptionsResponse($event)"
+      (apiErrorEvent)="onOptionsError($event)">
+    </ng-container>
 
     <div class="bar">
       <span class="spacer"></span>
@@ -100,11 +129,38 @@ const STATUS_OPTIONS: AckStatus[] = ['Pending', 'Overdue', 'Done', 'Obsolete', '
         <thead><tr>
           <th><input type="checkbox" [checked]="allSelected()" (change)="toggleAll($event)" /></th>
           <th>{{ lang.isGerman() ? 'Fallnummer' : 'Case' }}</th>
-          <th>{{ lang.isGerman() ? 'Mitarbeiter' : 'Employee' }}</th>
-          <th>{{ lang.t('folders') }}</th>
-          <th>{{ lang.t('version') }}</th>
-          <th>{{ lang.t('status') }}</th>
-          <th>{{ lang.t('deadline') }}</th>
+          <th>
+            <im-column-filter [title]="lang.isGerman() ? 'Mitarbeiter' : 'Employee'" [options]="employeeColumnOptions()" [(selected)]="employeeColumnFilter">
+              {{ lang.isGerman() ? 'Mitarbeiter' : 'Employee' }}
+            </im-column-filter>
+          </th>
+          <th>
+            <im-column-filter [title]="lang.t('folders')" [options]="folderColumnOptions()" [(selected)]="folderColumnFilter">
+              {{ lang.t('folders') }}
+            </im-column-filter>
+          </th>
+          <th>
+            <im-column-filter [title]="lang.t('version')" [options]="versionColumnOptions()" [(selected)]="versionColumnFilter">
+              {{ lang.t('version') }}
+            </im-column-filter>
+          </th>
+          <th>
+            <im-column-filter [title]="lang.t('status')" [options]="statusColumnOptions()" [(selected)]="statusColumnFilter">
+              {{ lang.t('status') }}
+            </im-column-filter>
+          </th>
+          <th>
+            <im-column-filter [title]="lang.t('deadline')" [options]="deadlineColumnOptions()" [(selected)]="deadlineColumnFilter">
+              {{ lang.t('deadline') }}
+            </im-column-filter>
+          </th>
+          <th class="reset-col">
+            @if (anyColumnFilterActive()) {
+              <button type="button" class="reset-link" (click)="resetAllColumnFilters()">
+                {{ lang.isGerman() ? 'Filter zurücksetzen' : 'Reset filters' }}
+              </button>
+            }
+          </th>
         </tr></thead>
         <tbody>
           @for (r of pagedRows(); track r.id) {
@@ -116,9 +172,10 @@ const STATUS_OPTIONS: AckStatus[] = ['Pending', 'Overdue', 'Done', 'Obsolete', '
               <td class="mono">{{ r.documentVersionLabel }}</td>
               <td><im-status-badge [status]="r.acknowledgment_picklist_status" /></td>
               <td class="tabular">{{ r.deadline }}</td>
+              <td></td>
             </tr>
           } @empty {
-            <tr><td colspan="7" class="empty">
+            <tr><td colspan="8" class="empty">
               {{ loading()
                 ? (lang.isGerman() ? 'Wird geladen…' : 'Loading…')
                 : (lang.isGerman() ? 'Keine Kenntnisnahmen.' : 'No acknowledgements.') }}
@@ -201,25 +258,109 @@ export class MonitoringComponent {
   readonly loading = signal(true);
 
   constructor() {
-    effect(() => { this.pageSize(); this.currentPage.set(1); }, { allowSignalWrites: true });
+    effect(() => {
+      this.pageSize(); this.employeeColumnFilter(); this.folderColumnFilter();
+      this.versionColumnFilter(); this.statusColumnFilter(); this.deadlineColumnFilter();
+      this.currentPage.set(1);
+    }, { allowSignalWrites: true });
     // refreshTick bumps after a bulk save — that refetch should show loading again too, not the empty state.
     effect(() => { this.payloads(); this.loading.set(true); }, { allowSignalWrites: true });
   }
+
+  /** Real server-side filter string, built from whichever columns currently have values selected — see FILTER_FIELD's own doc comment for the confirmed ECAP syntax. */
+  private readonly filterQuery = computed(() => {
+    const groups: string[] = [];
+    const addGroup = (field: string, values: string[]) => {
+      if (!values.length) return;
+      groups.push('(' + values.map((v) => `${field} equals '${v}'`).join(' OR ') + ')');
+    };
+    addGroup(FILTER_FIELD.employee, this.employeeColumnFilter());
+    addGroup(FILTER_FIELD.folder, this.folderColumnFilter());
+    addGroup(FILTER_FIELD.version, this.versionColumnFilter());
+    addGroup(FILTER_FIELD.status, this.statusColumnFilter());
+    addGroup(FILTER_FIELD.deadline, this.deadlineColumnFilter());
+    return groups.join(' AND ');
+  });
 
   readonly payloads = computed<RecordsPayloadMeta[]>(() => {
     this.refreshTick();
     return [{
       id: ACKNOWLEDGEMENT_VIEW_ID.allForCui, object_id: OBJECT_ID.acknowledgement,
       page: 0, pageSize: 200, sortBy: 'date_modified', sortOrder: 'desc',
-      getTotalRecordCount: false
+      getTotalRecordCount: false, filter: this.filterQuery()
     }];
+  });
+
+  /** Same view, never filtered — exists only to populate the column filter dropdowns' own option lists (see the ng-container note in the template). */
+  readonly optionsPayload = computed<RecordsPayloadMeta>(() => {
+    this.refreshTick();
+    return {
+      id: ACKNOWLEDGEMENT_VIEW_ID.allForCui, object_id: OBJECT_ID.acknowledgement,
+      page: 0, pageSize: 200, sortBy: 'date_modified', sortOrder: 'desc',
+      getTotalRecordCount: false
+    };
   });
 
   private readonly refreshTick = signal(0);
   private readonly rowsSignal = signal<MonitorRow[]>([]);
   readonly rows = computed(() => this.rowsSignal());
+  private readonly optionsRowsSignal = signal<MonitorRow[]>([]);
+  readonly optionsRows = computed(() => this.optionsRowsSignal());
 
   readonly selected = signal<Set<string>>(new Set());
+
+  /** Empty array means "no filter" — every row matches, same convention as im-column-filter's own contract. */
+  readonly employeeColumnFilter = signal<string[]>([]);
+  readonly folderColumnFilter = signal<string[]>([]);
+  readonly versionColumnFilter = signal<string[]>([]);
+  readonly statusColumnFilter = signal<string[]>([]);
+  readonly deadlineColumnFilter = signal<string[]>([]);
+
+  /** Drives the single "Reset filters" button — shown only while at least one column filter is active. */
+  readonly anyColumnFilterActive = computed(() =>
+    !!(this.employeeColumnFilter().length || this.folderColumnFilter().length
+      || this.versionColumnFilter().length || this.statusColumnFilter().length
+      || this.deadlineColumnFilter().length));
+
+  resetAllColumnFilters(): void {
+    this.employeeColumnFilter.set([]);
+    this.folderColumnFilter.set([]);
+    this.versionColumnFilter.set([]);
+    this.statusColumnFilter.set([]);
+    this.deadlineColumnFilter.set([]);
+  }
+
+  /**
+   * Column filter option lists are derived from the unfiltered optionsRows(), not the
+   * server-filtered rows() — otherwise picking a value in one column would shrink what's
+   * selectable in the others, since rows() only reflects whatever's currently matched.
+   */
+  readonly employeeColumnOptions = computed<ColumnFilterOption[]>(() => {
+    const names = [...new Set(this.optionsRows().map((r) => r.employee).filter(Boolean))].sort();
+    return names.map((n) => ({ value: n, label: n }));
+  });
+  readonly folderColumnOptions = computed<ColumnFilterOption[]>(() => {
+    const names = [...new Set(this.optionsRows().map((r) => r.folderName).filter(Boolean))].sort();
+    return names.map((n) => ({ value: n, label: n }));
+  });
+  /** value is the real documentversion_record value (record_locator) — the field ECAP actually filters on — label is the short version shown everywhere else. */
+  readonly versionColumnOptions = computed<ColumnFilterOption[]>(() => {
+    const byRaw = new Map<string, string>();
+    this.optionsRows().forEach((r) => { if (r.documentVersionRaw) byRaw.set(r.documentVersionRaw, r.documentVersionLabel); });
+    return [...byRaw.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([raw, label]) => ({ value: raw, label }));
+  });
+  readonly deadlineColumnOptions = computed<ColumnFilterOption[]>(() => {
+    const deadlines = [...new Set(this.optionsRows().map((r) => r.deadline).filter(Boolean))].sort();
+    return deadlines.map((d) => ({ value: d, label: d }));
+  });
+
+  private readonly STATUS_COLUMN_LABEL: Record<AckStatus, [string, string]> = {
+    None: ['Keine', 'None'], Pending: ['Offen', 'Pending'], Overdue: ['Überfällig', 'Overdue'],
+    Done: ['Erledigt', 'Done'], Obsolete: ['Nicht mehr erforderlich', 'Obsolete']
+  };
+  readonly statusColumnOptions = computed<ColumnFilterOption[]>(() =>
+    (['Overdue', 'Pending', 'Done', 'Obsolete', 'None'] as AckStatus[])
+      .map((s) => ({ value: s, label: this.STATUS_COLUMN_LABEL[s][this.lang.isGerman() ? 0 : 1] })));
 
   readonly pageSize = signal(10);
   readonly currentPage = signal(1);
@@ -229,19 +370,23 @@ export class MonitoringComponent {
     return this.rows().slice(start, start + this.pageSize());
   });
 
-  onResponse(response: RecordsResponseMeta): void {
-    const mapped = (response.listData?.recordsList ?? []).map((raw: any): MonitorRow => ({
+  private mapRow(raw: any): MonitorRow {
+    return {
       id: raw.id,
       caseNumber: raw.case_number ?? '',
       employee: raw.acknowledgment_textfield_employee ?? '',
       email: raw.acknowledgment_email_address_email ?? '',
       ownerName: raw.owner_id?.name ?? '',
       documentVersionLabel: versionLabelOf(raw.documentversion_record?.name ?? raw.documentversion_record),
+      documentVersionRaw: raw.documentversion_record?.name ?? raw.documentversion_record ?? '',
       acknowledgment_picklist_status: (raw.acknowledgment_picklist_status ?? 'None') as AckStatus,
       deadline: raw.acknowledgement_date_deadline_date ?? '',
       folderName: raw.acknowledgement_textfield_information_folder_name ?? ''
-    }));
-    this.rowsSignal.set(mapped);
+    };
+  }
+
+  onResponse(response: RecordsResponseMeta): void {
+    this.rowsSignal.set((response.listData?.recordsList ?? []).map((raw: any) => this.mapRow(raw)));
     this.selected.set(new Set());
     this.loading.set(false);
   }
@@ -250,6 +395,15 @@ export class MonitoringComponent {
     console.error('Failed to load Monitoring records', error);
     this.rowsSignal.set([]);
     this.loading.set(false);
+  }
+
+  onOptionsResponse(response: RecordsResponseMeta): void {
+    this.optionsRowsSignal.set((response.listData?.recordsList ?? []).map((raw: any) => this.mapRow(raw)));
+  }
+
+  onOptionsError(error: unknown): void {
+    console.error('Failed to load Monitoring filter options', error);
+    this.optionsRowsSignal.set([]);
   }
 
   allSelected(): boolean {
