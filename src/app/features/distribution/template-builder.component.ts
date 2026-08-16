@@ -269,6 +269,9 @@ export class TemplateBuilderComponent {
       this.templateId.set(id);
       this.loadExistingTemplate(id);
     }, { allowSignalWrites: true });
+    effect(() => {
+      this.relevantTeamIds().forEach((id) => this.ensureMemberCountFetched(id));
+    });
   }
 
   private loadExistingTemplate(templateId: string): void {
@@ -388,9 +391,9 @@ export class TemplateBuilderComponent {
 
   // Reverted back to 20 (2026-08-15): raising this to 200 broke the Teams/Users pickers
   // entirely (0 results) — this object's own list endpoint apparently can't handle that page
-  // size the way informationManagerTeamsUsers (allTeamLinks below) can. The 160-team cap this
-  // was meant to fix is still real; needs a different fix (e.g. a larger MAX_PAGES at the same
-  // pageSize, or a real network capture of why pageSize:200 fails here) before trying again.
+  // size. The 160-team cap this was meant to fix is still real; needs a different fix (e.g. a
+  // larger MAX_PAGES at the same pageSize, or a real network capture of why pageSize:200 fails
+  // here) before trying again.
   private static readonly PAGE_SIZE = 20;
   private static readonly MAX_PAGES = 8;
   private static readonly MAX_RETRIES_PER_PAGE = 5;
@@ -457,27 +460,38 @@ export class TemplateBuilderComponent {
   }
 
   /**
-   * teamId -> real member count. One paginated fetch of the whole Teams x Users junction
-   * object, counted client-side, instead of one filtered count-only request per team — same
-   * fix as AudienceBuilderComponent, for the same reason: adding a hierarchy-enabled team can
-   * expand into dozens of descendant rows, and firing that many individual requests (throttled
-   * by the browser's per-origin connection cap) made every add visibly slow.
+   * teamId -> real member count. ECAP's own Team record already exposes its live member list
+   * as a related-list field, InformationManagerTeams_Inform_1 (confirmed via a live network
+   * capture of the native Team detail page — CaseRecordPage response's formInfo.relationshipInfo
+   * shows it's a real relationship to the Teams x Users junction, and its array length matched
+   * the team's true member count exactly). Fetching that per linked team is simpler and
+   * reliably correct, replacing an earlier approach that batch-fetched and counted the entire
+   * tenant-wide junction object client-side — that turned out to be unreliable (page caps,
+   * lookup-field join-key mismatches) for no real benefit over just asking ECAP directly.
    */
-  private readonly allTeamLinks = toSignal(
-    this.fetchAllPaged<{ id: string; teamId: string }>(
-      OBJECT_ID.informationManagerTeamsUsers,
-      'id,informationmanagerteams_record',
-      (r) => ({ id: r.id, teamId: r.informationmanagerteams_record?.id ?? r.informationmanagerteams_record?.content ?? '' }),
-      200
-    ),
-    { initialValue: [] as { id: string; teamId: string }[] }
-  );
+  private readonly teamMemberCounts = signal<Map<string, number>>(new Map());
+  private readonly memberCountRequested = new Set<string>();
 
-  private readonly teamMemberCounts = computed(() => {
-    const map = new Map<string, number>();
-    this.allTeamLinks().forEach((r) => map.set(r.teamId, (map.get(r.teamId) ?? 0) + 1));
-    return map;
-  });
+  /** Every team id currently rendered with a count (top-level linked teams and their hierarchy-expanded descendants alike — ECAP creates a real row per descendant, so linkedTeams already lists them all). */
+  private readonly relevantTeamIds = computed(() => new Set(this.linkedTeams().map((t) => t.teamId).filter(Boolean)));
+
+  /** Reproduces the exact confirmed-working request shape (all three _component_ parts) rather than a slimmer, unverified fieldList guess. */
+  private ensureMemberCountFetched(teamId: string): void {
+    if (!teamId || this.memberCountRequested.has(teamId)) return;
+    this.memberCountRequested.add(teamId);
+    this.http.get<any>('/networking/solution/ServiceDesk/CaseRecordPage', {
+      params: { object_id: OBJECT_ID.teams, id: teamId, _component_: 'formInfo,record,gridRecords' }
+    }).pipe(
+      map((r) => Array.isArray(r?.record?.InformationManagerTeams_Inform_1) ? r.record.InformationManagerTeams_Inform_1.length : 0),
+      catchError((err) => { console.error(`Member count fetch failed for team ${teamId}`, err); return of(0); })
+    ).subscribe((count) => {
+      this.teamMemberCounts.update((map) => {
+        const next = new Map(map);
+        next.set(teamId, count);
+        return next;
+      });
+    });
+  }
 
   memberCountFor(teamId: string): number {
     return this.teamMemberCounts().get(teamId) ?? 0;
