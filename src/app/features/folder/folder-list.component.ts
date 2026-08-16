@@ -42,6 +42,9 @@ const FILTER_FIELD = {
   styles: [`
     .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
     .bar .spacer { margin-left: auto; }
+    .search-bar { display: flex; margin-bottom: 18px; }
+    .search { font: inherit; font-size: 13px; padding: 8px 14px; border: 1px solid var(--border-1);
+              border-radius: var(--radius-pill); min-width: 240px; }
     .new { background: var(--escriba-teal); color: var(--navy-900); padding: 11px 20px;
            border-radius: var(--radius-pill); font-weight: 600; }
     .scroll { overflow-x: auto; border-radius: var(--radius-card); }
@@ -94,6 +97,10 @@ const FILTER_FIELD = {
       @if (session.canCreateFolder()) {
         <a class="new" routerLink="/folders/new">{{ lang.isGerman() ? 'Neuer Informationsordner' : 'New information folder' }}</a>
       }
+    </div>
+    <div class="search-bar">
+      <input type="text" class="search" [value]="nameSearch()" (input)="nameSearch.set($any($event.target).value)"
+             [placeholder]="lang.isGerman() ? 'Nach Name suchen…' : 'Search by name…'">
     </div>
 
     <div class="scroll">
@@ -205,11 +212,19 @@ export class FolderListComponent {
   readonly statusFilter = signal<string[]>([]);
   readonly rollupFilter = signal<string[]>([]);
   readonly responsibleTeamFilter = signal<string[]>([]);
+  /**
+   * Free-text name search — separate from the Name column filter dropdown above. Applied
+   * client-side (see `visible` below) against whatever's already loaded for the current tab,
+   * not sent to ECAP as a `filter` condition — a `contains`-style operator was tried there
+   * first but didn't behave as expected, so this searches the already-fetched rows instead of
+   * guessing at unconfirmed ECAP filter syntax a second time.
+   */
+  readonly nameSearch = signal('');
 
   /** Drives the single "Reset filters" link — shown only while at least one column filter is active. */
   readonly anyColumnFilterActive = computed(() =>
     !!(this.nameFilter().length || this.confidentialityFilter().length || this.statusFilter().length
-      || this.rollupFilter().length || this.responsibleTeamFilter().length));
+      || this.rollupFilter().length || this.responsibleTeamFilter().length || this.nameSearch().trim()));
 
   resetAllColumnFilters(): void {
     this.nameFilter.set([]);
@@ -217,6 +232,7 @@ export class FolderListComponent {
     this.statusFilter.set([]);
     this.rollupFilter.set([]);
     this.responsibleTeamFilter.set([]);
+    this.nameSearch.set('');
   }
 
   /**
@@ -245,7 +261,7 @@ export class FolderListComponent {
     // otherwise switching tabs/filters can leave the pager stuck past the new last page.
     effect(() => {
       this.view(); this.nameFilter(); this.confidentialityFilter(); this.statusFilter();
-      this.rollupFilter(); this.responsibleTeamFilter();
+      this.rollupFilter(); this.responsibleTeamFilter(); this.nameSearch();
       this.pageSize();
       this.currentPage.set(1);
     }, { allowSignalWrites: true });
@@ -269,6 +285,7 @@ export class FolderListComponent {
     this.statusFilter.set([]);
     this.rollupFilter.set([]);
     this.responsibleTeamFilter.set([]);
+    this.nameSearch.set('');
     this.view.set(this.view() === id ? 'all' : id);
   }
 
@@ -522,7 +539,10 @@ export class FolderListComponent {
    * Confidentiality/Status/Roll-up are no longer re-filtered here either — payloads() now
    * sends the real filter string to ECAP itself, so `all()` already only contains matching rows.
    */
-  readonly visible = computed(() => this.all());
+  readonly visible = computed(() => {
+    const search = this.nameSearch().trim().toLowerCase();
+    return this.all().filter((f) => !search || f.information_folder_textfield_name.toLowerCase().includes(search));
+  });
 
   deactivate(folderId: string): void {
     this.busy.set(folderId);

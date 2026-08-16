@@ -93,6 +93,10 @@ interface AckRow extends Acknowledgement { documentVersionRaw: string; }
       <span class="spacer"></span>
       <button type="button" class="ghost" (click)="exportCsv()">{{ lang.isGerman() ? 'CSV exportieren' : 'Export CSV' }}</button>
     </div>
+    <div class="bar">
+      <input type="text" class="search" [value]="nameSearch()" (input)="nameSearch.set($any($event.target).value)"
+             [placeholder]="lang.isGerman() ? 'Nach Ordnername suchen…' : 'Search by folder name…'">
+    </div>
 
     <div class="scroll">
         <table>
@@ -289,7 +293,7 @@ export class ChaseTableComponent {
     effect(() => {
       this.filter(); this.pageSize(); this.folderFilter();
       this.employeeColumnFilter(); this.folderColumnFilter(); this.versionColumnFilter();
-      this.statusColumnFilter(); this.deadlineColumnFilter();
+      this.statusColumnFilter(); this.deadlineColumnFilter(); this.nameSearch();
       this.currentPage.set(1);
     }, { allowSignalWrites: true });
   }
@@ -385,11 +389,19 @@ export class ChaseTableComponent {
   readonly versionColumnFilter = signal<string[]>([]);
   readonly statusColumnFilter = signal<string[]>([]);
   readonly deadlineColumnFilter = signal<string[]>([]);
+  /**
+   * Free-text folder name search — separate from the Information folder column filter dropdown
+   * above. Applied client-side (see `rows` below) against whatever's already loaded for the
+   * current chip, not sent to ECAP as a `filter` condition — a `contains`-style operator was
+   * tried there first but didn't behave as expected, so this searches the already-fetched rows
+   * instead of guessing at unconfirmed ECAP filter syntax a second time.
+   */
+  readonly nameSearch = signal('');
 
   /** Drives the single "Reset filters" link — shown only while at least one column filter is active. */
   readonly anyColumnFilterActive = computed(() =>
     !!(this.employeeColumnFilter().length || this.folderColumnFilter().length || this.versionColumnFilter().length
-      || this.statusColumnFilter().length || this.deadlineColumnFilter().length));
+      || this.statusColumnFilter().length || this.deadlineColumnFilter().length || this.nameSearch().trim()));
 
   resetAllColumnFilters(): void {
     this.employeeColumnFilter.set([]);
@@ -397,6 +409,7 @@ export class ChaseTableComponent {
     this.versionColumnFilter.set([]);
     this.statusColumnFilter.set([]);
     this.deadlineColumnFilter.set([]);
+    this.nameSearch.set('');
   }
 
   /**
@@ -430,8 +443,15 @@ export class ChaseTableComponent {
     return deadlines.map((d) => ({ value: d, label: d }));
   });
 
-  /** Folder/version/status/deadline filtering (and the folder deep-link) all happen server-side now via filterQuery() — all() already only contains matching rows. */
-  readonly rows = computed(() => this.all());
+  /**
+   * Folder/version/status/deadline column filtering (and the folder deep-link) all happen
+   * server-side via filterQuery() — all() already only contains matching rows. The free-text
+   * name search is layered on top client-side (see nameSearch's own doc comment).
+   */
+  readonly rows = computed(() => {
+    const search = this.nameSearch().trim().toLowerCase();
+    return this.all().filter((a) => !search || a.acknowledgement_textfield_information_folder_name.toLowerCase().includes(search));
+  });
 
   readonly pagedRows = computed(() => {
     const start = (this.currentPage() - 1) * this.pageSize();

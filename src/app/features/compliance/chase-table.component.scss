@@ -1,5 +1,7 @@
 .bar { display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap; font-size:13px; color:var(--fg-2);
-       .spacer { margin-left:auto; } }
+       .spacer { margin-left:auto; }
+       .search { font:inherit; font-size:13px; padding:8px 14px; border:1px solid var(--border-1);
+                 border-radius:var(--radius-pill); min-width:240px; } }
 .filter-banner { background:var(--bg-mint); border:1px solid var(--border-1); border-radius:var(--radius-input); padding:10px 14px; }
 .scroll { overflow-x:auto; background:#fff; border:1px solid var(--border-1); border-radius:var(--radius-card); }
 table { width:100%; min-width:900px; border-collapse:collapse; }

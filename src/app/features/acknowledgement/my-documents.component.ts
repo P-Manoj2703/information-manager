@@ -48,6 +48,9 @@ function versionLabelOf(displayValue: string | undefined): string {
   styles: [`
     .note { background: #fff; border: 1px solid var(--border-1); border-radius: var(--radius-input);
             padding: 12px 16px; font-size: 13px; color: var(--fg-2); margin-bottom: 16px; }
+    .bar { display: flex; margin-bottom: 16px; }
+    .bar .search { font: inherit; font-size: 13px; padding: 8px 14px; border: 1px solid var(--border-1);
+                   border-radius: var(--radius-pill); min-width: 240px; }
     .scroll { overflow-x: auto; border-radius: var(--radius-card); }
     table { width: 100%; min-width: 720px; border-collapse: collapse; background: #fff;
             border: 1px solid var(--border-1); border-radius: var(--radius-card); overflow: hidden; }
@@ -72,6 +75,11 @@ function versionLabelOf(displayValue: string | undefined): string {
           ? 'Sie sehen ausschließlich Dokumentversionen, für die eine Kenntnisnahme für Sie vorliegt. Datei-Uploads sind für diese Rolle nicht möglich.'
           : 'You only see document versions you hold an acknowledgement for. File uploads are not available for this role.' }}
     </p>
+
+    <div class="bar">
+      <input type="text" class="search" [value]="nameSearch()" (input)="nameSearch.set($any($event.target).value)"
+             [placeholder]="lang.isGerman() ? 'Nach Dokument suchen…' : 'Search by document name…'">
+    </div>
 
     <div class="scroll">
     <table>
@@ -205,6 +213,8 @@ export class MyDocumentsComponent {
   readonly versionColumnFilter = signal<string[]>([]);
   readonly validFromColumnFilter = signal<string[]>([]);
   readonly statusColumnFilter = signal<string[]>([]);
+  /** Free-text document name search — separate from the Document column filter dropdown above. Client-side, so no debounce needed — this is a plain array filter, not a network request. */
+  readonly nameSearch = signal('');
 
   /** Column filter option lists are derived from whatever's actually loaded, not a hardcoded tenant-wide list. */
   readonly documentOptions = computed<ColumnFilterOption[]>(() => {
@@ -234,7 +244,9 @@ export class MyDocumentsComponent {
     const versionCol = this.versionColumnFilter();
     const validFromCol = this.validFromColumnFilter();
     const statusCol = this.statusColumnFilter();
+    const search = this.nameSearch().trim().toLowerCase();
     return this.rows()
+      .filter((r) => !search || r.folderName.toLowerCase().includes(search))
       .filter((r) => !documentCol.length || documentCol.includes(r.folderName))
       .filter((r) => !versionCol.length || versionCol.includes(r.versionLabel))
       .filter((r) => {
@@ -260,7 +272,7 @@ export class MyDocumentsComponent {
   constructor() {
     effect(() => {
       this.pageSize(); this.documentColumnFilter(); this.versionColumnFilter();
-      this.validFromColumnFilter(); this.statusColumnFilter();
+      this.validFromColumnFilter(); this.statusColumnFilter(); this.nameSearch();
       this.currentPage.set(1);
     }, { allowSignalWrites: true });
   }

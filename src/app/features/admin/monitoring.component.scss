@@ -1,6 +1,8 @@
 .bar { display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;
   .spacer { margin-left:auto; }
   .count { font-size:13px; font-weight:600; color:var(--fg-2); }
+  .search { font:inherit; font-size:13px; padding:8px 14px; border:1px solid var(--border-1);
+            border-radius:var(--radius-pill); min-width:240px; }
 }
 .scroll { overflow-x:auto; background:#fff; border:1px solid var(--border-1); border-radius:var(--radius-card); }
 table { width:100%; min-width:900px; border-collapse:collapse; }

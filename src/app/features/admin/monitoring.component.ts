@@ -105,6 +105,8 @@ const FILTER_FIELD = {
     </ng-container>
 
     <div class="bar">
+      <input type="text" class="search" [value]="nameSearch()" (input)="nameSearch.set($any($event.target).value)"
+             [placeholder]="lang.isGerman() ? 'Nach Ordnername suchen…' : 'Search by folder name…'">
       <span class="spacer"></span>
       @if (selected().size) {
         <span class="count">{{ selected().size }} {{ lang.isGerman() ? 'ausgewählt' : 'selected' }}</span>
@@ -261,6 +263,7 @@ export class MonitoringComponent {
     effect(() => {
       this.pageSize(); this.employeeColumnFilter(); this.folderColumnFilter();
       this.versionColumnFilter(); this.statusColumnFilter(); this.deadlineColumnFilter();
+      this.nameSearch();
       this.currentPage.set(1);
     }, { allowSignalWrites: true });
     // refreshTick bumps after a bulk save — that refetch should show loading again too, not the empty state.
@@ -303,7 +306,10 @@ export class MonitoringComponent {
 
   private readonly refreshTick = signal(0);
   private readonly rowsSignal = signal<MonitorRow[]>([]);
-  readonly rows = computed(() => this.rowsSignal());
+  readonly rows = computed(() => {
+    const search = this.nameSearch().trim().toLowerCase();
+    return this.rowsSignal().filter((r) => !search || r.folderName.toLowerCase().includes(search));
+  });
   private readonly optionsRowsSignal = signal<MonitorRow[]>([]);
   readonly optionsRows = computed(() => this.optionsRowsSignal());
 
@@ -315,12 +321,20 @@ export class MonitoringComponent {
   readonly versionColumnFilter = signal<string[]>([]);
   readonly statusColumnFilter = signal<string[]>([]);
   readonly deadlineColumnFilter = signal<string[]>([]);
+  /**
+   * Free-text folder name search — separate from the column filter dropdowns above. Applied
+   * client-side (see `rows` below) against whatever's already loaded, not sent to ECAP as a
+   * `filter` condition — a `contains`-style operator was tried there first but didn't behave as
+   * expected, so this searches the already-fetched rows instead of guessing at unconfirmed ECAP
+   * filter syntax a second time.
+   */
+  readonly nameSearch = signal('');
 
   /** Drives the single "Reset filters" button — shown only while at least one column filter is active. */
   readonly anyColumnFilterActive = computed(() =>
     !!(this.employeeColumnFilter().length || this.folderColumnFilter().length
       || this.versionColumnFilter().length || this.statusColumnFilter().length
-      || this.deadlineColumnFilter().length));
+      || this.deadlineColumnFilter().length || this.nameSearch().trim()));
 
   resetAllColumnFilters(): void {
     this.employeeColumnFilter.set([]);
@@ -328,6 +342,7 @@ export class MonitoringComponent {
     this.versionColumnFilter.set([]);
     this.statusColumnFilter.set([]);
     this.deadlineColumnFilter.set([]);
+    this.nameSearch.set('');
   }
 
   /**

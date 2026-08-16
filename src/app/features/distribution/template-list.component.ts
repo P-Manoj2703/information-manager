@@ -38,6 +38,9 @@ interface TemplateRow {
     .bar { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
     .intro { font-size:13px; color:var(--fg-2); max-width:70ch; line-height:1.6; margin:0; }
     .spacer { flex: 1; }
+    .search-bar { display: flex; margin-bottom: 18px; }
+    .search { font: inherit; font-size:13px; padding:8px 14px; border:1px solid var(--border-1);
+              border-radius:var(--radius-pill); min-width:240px; }
     .new { background: var(--escriba-teal); color: var(--navy-900); padding: 11px 20px;
            border-radius: var(--radius-pill); font-weight: 600; white-space: nowrap; }
     .scroll { overflow-x: auto; border-radius: var(--radius-card); }
@@ -66,6 +69,10 @@ interface TemplateRow {
       <a class="new" routerLink="/templates/new">
         {{ lang.isGerman() ? 'Neue Verteilervorlage' : 'New distribution template' }}
       </a>
+    </div>
+    <div class="search-bar">
+      <input type="text" class="search" [value]="nameSearch()" (input)="nameSearch.set($any($event.target).value)"
+             [placeholder]="lang.isGerman() ? 'Nach Name suchen…' : 'Search by name…'">
     </div>
     @if (loading()) {
       <p class="empty">{{ lang.isGerman() ? 'Vorlagen werden geladen…' : 'Loading templates…' }}</p>
@@ -107,7 +114,7 @@ interface TemplateRow {
             </tr>
           } @empty {
             <tr><td colspan="5" class="empty">
-              {{ (nameColumnFilter().length || usedByColumnFilter().length)
+              {{ (nameColumnFilter().length || usedByColumnFilter().length || nameSearch().trim())
                 ? (lang.isGerman() ? 'Keine Vorlagen entsprechen dem Filter.' : 'No templates match this filter.')
                 : (lang.isGerman() ? 'Noch keine Verteilervorlagen.' : 'No distribution templates yet.') }}
             </td></tr>
@@ -140,6 +147,8 @@ export class TemplateListComponent {
 
   readonly nameColumnFilter = signal<string[]>([]);
   readonly usedByColumnFilter = signal<string[]>([]);
+  /** Free-text name search — separate from the Name column filter dropdown above. Client-side, so no debounce needed — this is a plain array filter, not a network request. */
+  readonly nameSearch = signal('');
 
   /** Option lists are derived from whatever's actually loaded, not a hardcoded tenant-wide list. */
   readonly nameOptions = computed<ColumnFilterOption[]>(() =>
@@ -152,8 +161,10 @@ export class TemplateListComponent {
   readonly templates = computed(() => {
     const nameFilter = this.nameColumnFilter();
     const usedByFilter = this.usedByColumnFilter();
+    const search = this.nameSearch().trim().toLowerCase();
     return this.fetchedTemplates()
       .filter((t) => !this.deletedIds().has(t.id))
+      .filter((t) => !search || t.name.toLowerCase().includes(search))
       .filter((t) => !nameFilter.length || nameFilter.includes(t.name))
       .filter((t) => !usedByFilter.length || usedByFilter.includes(t.usedByCount > 0 ? 'used' : 'unused'));
   });
@@ -207,7 +218,7 @@ export class TemplateListComponent {
 
   constructor() {
     effect(() => {
-      this.pageSize(); this.nameColumnFilter(); this.usedByColumnFilter();
+      this.pageSize(); this.nameColumnFilter(); this.usedByColumnFilter(); this.nameSearch();
       this.currentPage.set(1);
     }, { allowSignalWrites: true });
   }

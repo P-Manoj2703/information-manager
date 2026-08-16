@@ -64,6 +64,9 @@ interface AckRow {
     .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
     .bar .spacer { margin-left: auto; }
     .bar .count { font-size: 13px; color: var(--fg-3); }
+    .search-bar { display: flex; margin-bottom: 20px; }
+    .search { font: inherit; font-size: 13px; padding: 8px 14px; border: 1px solid var(--border-1);
+              border-radius: var(--radius-pill); min-width: 240px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
     .tile { background: #fff; border: 1px solid var(--border-1); border-radius: var(--radius-card);
             padding: 20px 22px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--shadow-xs);
@@ -95,6 +98,10 @@ interface AckRow {
       <span class="count">
         {{ visibleFolders().length }} {{ lang.isGerman() ? 'Mappen' : 'folders' }}
       </span>
+    </div>
+    <div class="search-bar">
+      <input type="text" class="search" [value]="nameSearch()" (input)="nameSearch.set($any($event.target).value)"
+             [placeholder]="lang.isGerman() ? 'Nach Name suchen…' : 'Search by name…'">
     </div>
 
     <div class="grid">
@@ -232,6 +239,8 @@ export class EstateOverviewComponent {
   }
 
   readonly confidentialityFilter = signal('all');
+  /** Free-text name search — client-side, same substring/case-insensitive match as the other tabs. */
+  readonly nameSearch = signal('');
 
   readonly chips = computed<Chip[]>(() => [
     { id: 'all', label: this.lang.isGerman() ? 'Alle' : 'All' },
@@ -242,6 +251,9 @@ export class EstateOverviewComponent {
 
   readonly visibleFolders = computed(() => {
     const f = this.confidentialityFilter();
-    return f === 'all' ? this.folders() : this.folders().filter((x) => x.confidentiality === f);
+    const search = this.nameSearch().trim().toLowerCase();
+    return this.folders()
+      .filter((x) => f === 'all' || x.confidentiality === f)
+      .filter((x) => !search || x.name.toLowerCase().includes(search));
   });
 }
