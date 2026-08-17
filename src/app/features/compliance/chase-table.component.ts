@@ -61,126 +61,8 @@ interface AckRow extends Acknowledgement { documentVersionRaw: string; }
   selector: 'im-chase-table',
   standalone: true,
   imports: [RouterLink, RecordListDirective, StatusBadgeComponent, FilterChipsComponent, ColumnFilterComponent, PagerComponent],
-  styleUrl: './chase-table.component.scss',
-  template: `
-    @for (payload of payloads(); track $index) {
-      <ng-container
-        [libEcapRuntimeRecordList]="payload"
-        (apiResponseEvent)="onAckResponse($index, $event)"
-        (apiErrorEvent)="onAckError($index, $event)">
-      </ng-container>
-    }
-    <!-- Always unfiltered — feeds the column filter dropdowns' own option lists, so picking a
-         value in one column never shrinks what's selectable in another. -->
-    @for (payload of optionsPayloads(); track $index) {
-      <ng-container
-        [libEcapRuntimeRecordList]="payload"
-        (apiResponseEvent)="onOptionsResponse($index, $event)"
-        (apiErrorEvent)="onOptionsError($index, $event)">
-      </ng-container>
-    }
-
-    @if (folderFilter()) {
-      <div class="bar filter-banner">
-        <span>{{ lang.isGerman() ? 'Gefiltert nach Ordner:' : 'Filtered by folder:' }} <b>{{ folderFilter() }}</b></span>
-        <span class="spacer"></span>
-        <button type="button" class="ghost" (click)="clearFolderFilter()">{{ lang.isGerman() ? 'Filter entfernen' : 'Clear filter' }}</button>
-      </div>
-    }
-
-    <div class="bar">
-      <im-filter-chips [chips]="chips()" [(value)]="filter" />
-      <span class="spacer"></span>
-      <button type="button" class="ghost" (click)="exportCsv()">{{ lang.isGerman() ? 'CSV exportieren' : 'Export CSV' }}</button>
-    </div>
-    <div class="bar">
-      <input type="text" class="search" [value]="nameSearch()" (input)="nameSearch.set($any($event.target).value)"
-             [placeholder]="lang.isGerman() ? 'Nach Ordnername suchen…' : 'Search by folder name…'">
-    </div>
-
-    <div class="scroll">
-        <table>
-          <thead><tr>
-            <th>
-              <im-column-filter [title]="lang.isGerman() ? 'Mitarbeiter' : 'Employee'" [options]="employeeOptions()" [(selected)]="employeeColumnFilter">
-                {{ lang.isGerman() ? 'Mitarbeiter' : 'Employee' }}
-              </im-column-filter>
-            </th>
-            <th>
-              <im-column-filter [title]="lang.isGerman() ? 'Informationsmappe' : 'Information folder'"
-                                 [options]="folderOptions()" [(selected)]="folderColumnFilter">
-                {{ lang.isGerman() ? 'Informationsmappe' : 'Information folder' }}
-              </im-column-filter>
-            </th>
-            <th>
-              <im-column-filter [title]="lang.t('version')" [options]="versionOptions()" [(selected)]="versionColumnFilter">
-                {{ lang.t('version') }}
-              </im-column-filter>
-            </th>
-            <th>
-              <im-column-filter [title]="lang.t('deadline')" [options]="deadlineOptions()" [(selected)]="deadlineColumnFilter">
-                {{ lang.t('deadline') }}
-              </im-column-filter>
-            </th>
-            <th>
-              <im-column-filter [title]="lang.t('status')" [options]="statusOptions()" [(selected)]="statusColumnFilter">
-                {{ lang.t('status') }}
-              </im-column-filter>
-            </th>
-            <th class="reset-col">
-              @if (anyColumnFilterActive()) {
-                <button type="button" class="reset-link" (click)="resetAllColumnFilters()">
-                  {{ lang.isGerman() ? 'Filter zurücksetzen' : 'Reset filters' }}
-                </button>
-              }
-            </th>
-          </tr></thead>
-          <tbody>
-            @for (a of pagedRows(); track a.id) {
-              <tr>
-                <td>
-                  <a class="person" [routerLink]="['/acknowledgements', a.id]">
-                    <span class="avatar">{{ initials(a.acknowledgment_textfield_employee) }}</span>
-                    <span>
-                      <b>{{ a.acknowledgment_textfield_employee }}</b>
-                      <small>{{ a.acknowledgment_email_address_email }}</small>
-                    </span>
-                  </a>
-                </td>
-                <td>{{ a.acknowledgement_textfield_information_folder_name }}</td>
-                <td class="mono">{{ a.documentversion_record }}</td>
-                <td class="tabular">{{ a.acknowledgement_date_deadline_date ? lang.date(a.acknowledgement_date_deadline_date) : '—' }}</td>
-                <td>
-                  <im-status-badge [status]="a.acknowledgment_picklist_status" />
-                  @if (a.acknowledgment_picklist_status === 'Overdue') {
-                    <small class="late">{{ acks.daysOverdue(a) }} {{ lang.isGerman() ? 'Tage' : 'days' }}</small>
-                  }
-                </td>
-                <td></td>
-              </tr>
-            } @empty {
-              <tr><td colspan="6" class="empty">
-                {{ loading()
-                  ? (lang.isGerman() ? 'Wird geladen…' : 'Loading…')
-                  : (lang.isGerman() ? 'Keine Kenntnisnahmen in dieser Ansicht.' : 'No acknowledgements in this view.') }}
-              </td></tr>
-            }
-          </tbody>
-        </table>
-      </div>
-
-    @if (rows().length) {
-      <im-pager [total]="rows().length" [(page)]="currentPage" [(pageSize)]="pageSize" />
-    }
-
-    @if (session.role() === 'informationsbereitsteller') {
-      <p class="note">
-        {{ lang.isGerman()
-          ? 'Als Informationsbereitsteller haben Sie Lesezugriff auf diese Kenntnisnahmen. Statusänderungen sind der Compliance vorbehalten.'
-          : 'As information provider you have read access to these acknowledgements. Status changes are reserved for Compliance.' }}
-      </p>
-    }
-  `
+  templateUrl: './chase-table.component.html',
+  styleUrl: './chase-table.component.scss'
 })
 export class ChaseTableComponent {
   private readonly route = inject(ActivatedRoute);
@@ -380,7 +262,7 @@ export class ChaseTableComponent {
     { id: 'all', label: this.lang.isGerman() ? 'Alle' : 'All' },
     ...(this.session.role() === 'complianceverantwortlicher'
       ? []
-      : [{ id: 'myUser', label: this.lang.isGerman() ? 'Meine Benutzer-Kenntnisnahmen' : 'My User Acknowledgments' }])
+      : [{ id: 'myUser', label: this.lang.isGerman() ? 'Meine Benutzer-Kenntnisnahmen' : 'Acknowledgments Assigned to Users' }])
   ]);
 
   /** Empty array means "no filter" — every row matches, same convention as im-column-filter's own contract. */

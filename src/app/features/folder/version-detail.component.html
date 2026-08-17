@@ -1,0 +1,145 @@
+<a class="back" [routerLink]="['/folders', id()]">← {{ folderName() || id() }}</a>
+
+@if (version(); as v) {
+  <section class="card">
+    <header class="head">
+      <im-status-badge [status]="v.version_picklist_version_status" [dot]="false" />
+      <h1>{{ v.document_version_textfield_name }}</h1>
+      @if (canEdit() && !editing()) {
+        <button type="button" class="ghost" (click)="startEdit(v)">{{ lang.isGerman() ? 'Bearbeiten' : 'Edit' }}</button>
+        <button type="button" class="primary" [disabled]="activating()" (click)="activate(v.id)">
+          {{ activating() ? (lang.isGerman() ? 'Wird aktiviert…' : 'Activating…') : (lang.isGerman() ? 'Aktivieren' : 'Activate') }}
+        </button>
+      }
+    </header>
+
+    @if (saveError()) { <p class="error">{{ saveError() }}</p> }
+    @if (activateError()) { <p class="error">{{ activateError() }}</p> }
+
+    @if (editing()) {
+      <form [formGroup]="editForm" (ngSubmit)="saveEdit(v.id)" class="grid">
+        <label class="field">
+          <span class="label">{{ lang.isGerman() ? 'Name' : 'Name' }}</span>
+          <input formControlName="document_version_textfield_name">
+        </label>
+        <label class="field">
+          <span class="label">{{ lang.t('version') }}</span>
+          <input formControlName="version_text_field_version_id">
+        </label>
+        <label class="field wide">
+          <span class="label">{{ lang.isGerman() ? 'Beschreibung' : 'Description' }}</span>
+          <textarea rows="3" formControlName="version_textarea_description"></textarea>
+        </label>
+      </form>
+      <footer class="edit-actions">
+        <button type="button" class="ghost" [disabled]="saving()" (click)="editing.set(false)">{{ lang.isGerman() ? 'Abbrechen' : 'Cancel' }}</button>
+        <button type="button" class="primary" [disabled]="editForm.invalid || saving()" (click)="saveEdit(v.id)">
+          {{ saving() ? (lang.isGerman() ? 'Wird gespeichert…' : 'Saving…') : (lang.isGerman() ? 'Speichern' : 'Save') }}
+        </button>
+      </footer>
+    } @else {
+      <div class="grid">
+        <div class="field">
+          <span class="label">{{ lang.isGerman() ? 'Informationsordner' : 'Information Folder' }}</span>
+          <a [routerLink]="['/folders', id()]">{{ folderName() || id() }}</a>
+        </div>
+        <div class="field">
+          <span class="label">{{ lang.isGerman() ? 'Versionsstatus' : 'Version Status' }}</span>
+          <im-status-badge [status]="v.version_picklist_version_status" [dot]="false" />
+        </div>
+        <div class="field">
+          <span class="label">{{ lang.isGerman() ? 'Name' : 'Name' }}</span>
+          <span>{{ v.document_version_textfield_name }}</span>
+        </div>
+        <div class="field">
+          <span class="label">{{ lang.t('version') }}</span>
+          <span class="mono">{{ v.version_text_field_version_id }}</span>
+        </div>
+        <div class="field wide">
+          <span class="label">{{ lang.isGerman() ? 'Beschreibung' : 'Description' }}</span>
+          <span>{{ v.version_textarea_description || '—' }}</span>
+        </div>
+        <div class="field">
+          <span class="label">{{ lang.isGerman() ? 'Gültig von' : 'Valid from' }}</span>
+          <span>{{ v.version_date_time_valid_from ? lang.date(v.version_date_time_valid_from) : '—' }}</span>
+        </div>
+        <div class="field">
+          <span class="label">{{ lang.isGerman() ? 'Gültig bis' : 'Valid until' }}</span>
+          <span>{{ v.version_date_time_valid_until ? lang.date(v.version_date_time_valid_until) : '—' }}</span>
+        </div>
+        <div class="field">
+          <span class="label">{{ lang.isGerman() ? 'Dokumente gesamt' : 'Total documents' }}</span>
+          <span>{{ v.version_number_total_document_count }}</span>
+        </div>
+      </div>
+    }
+
+    <div class="documents">
+      <span class="label">{{ lang.isGerman() ? 'Dokument' : 'Document' }}</span>
+      @if (documentsLoading()) {
+        <p class="missing">{{ lang.isGerman() ? 'Wird geladen…' : 'Loading…' }}</p>
+      } @else {
+        <ul class="files">
+          @for (d of documents(); track d.id) {
+            <li>
+              <span class="kind">{{ d.fileExtension.toUpperCase() }}</span>
+              <span class="meta"><strong>{{ d.name }}</strong></span>
+              <button type="button" class="ghost" (click)="previewDocId.set(d.id)">{{ lang.isGerman() ? 'Vorschau' : 'Preview' }}</button>
+              <a class="ghost" [href]="downloadUrl(d.id)" target="_blank" rel="noopener">{{ lang.isGerman() ? 'Herunterladen' : 'Download' }}</a>
+            </li>
+          } @empty {
+            @if (v.version_number_total_document_count > 0) {
+              <p class="missing">
+                {{ lang.isGerman()
+                  ? v.version_number_total_document_count + ' Dokument(e) laut ECAP — Liste momentan nicht abrufbar.'
+                  : v.version_number_total_document_count + ' document(s) per ECAP — list unavailable right now.' }}
+              </p>
+            } @else {
+              <p class="missing">{{ lang.isGerman() ? 'Keine Dokumente hinterlegt.' : 'No documents on file.' }}</p>
+            }
+          }
+        </ul>
+      }
+
+      @if (previewDocId()) {
+        <div class="preview-panel">
+          <button type="button" class="ghost close-preview" (click)="previewDocId.set(null)">
+            {{ lang.isGerman() ? 'Vorschau schließen' : 'Close preview' }}
+          </button>
+          <im-pdf-viewer [versionId]="v.id" [(previewDocId)]="previewDocId" [canDownloadAll]="false" />
+        </div>
+      }
+    </div>
+
+    @if (canEdit()) {
+      <div class="documents">
+        <span class="label">{{ lang.isGerman() ? 'Dokument hinzufügen' : 'Add document' }}</span>
+        <div class="drop" (dragover)="$event.preventDefault()" (drop)="onDrop($event)">
+          <strong>{{ lang.isGerman() ? 'PDF hierher ziehen' : 'Drag your PDF here' }}</strong>
+          <span>{{ lang.isGerman() ? 'Nur PDF. Andere Formate werden vom Server abgelehnt.' : 'PDF only. Other formats are rejected by the server.' }}</span>
+          <input #picker type="file" accept="application/pdf" multiple hidden (change)="onPick($event)">
+          <button type="button" class="ghost" (click)="picker.click()">{{ lang.isGerman() ? 'Datei wählen' : 'Choose file' }}</button>
+        </div>
+
+        @if (uploadRows().length) {
+          <ul class="files">
+            @for (r of uploadRows(); track r.file.name) {
+              <li [class.error]="r.state === 'error'">
+                <span class="kind">PDF</span>
+                <span class="meta">
+                  <strong>{{ r.file.name }}</strong>
+                  <small>{{ uploadRowStatus(r) }}</small>
+                </span>
+                @if (r.state !== 'uploading') {
+                  <button type="button" class="x" (click)="removeUploadRow(r)" aria-label="remove">×</button>
+                }
+              </li>
+            }
+          </ul>
+        }
+      </div>
+    }
+  </section>
+} @else if (!loading()) {
+  <p class="missing">{{ lang.isGerman() ? 'Version nicht gefunden.' : 'Version not found.' }}</p>
+}

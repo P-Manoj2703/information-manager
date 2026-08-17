@@ -1,0 +1,160 @@
+@for (payload of payloads(); track $index) {
+  <ng-container
+    [libEcapRuntimeRecordList]="payload"
+    (apiResponseEvent)="onResponse($event)"
+    (apiErrorEvent)="onError($event)">
+  </ng-container>
+}
+<!-- Always unfiltered — feeds the column filter dropdowns' own option lists, so picking a
+     value in one column never shrinks what's selectable in another. -->
+<ng-container
+  [libEcapRuntimeRecordList]="optionsPayload()"
+  (apiResponseEvent)="onOptionsResponse($event)"
+  (apiErrorEvent)="onOptionsError($event)">
+</ng-container>
+
+<div class="bar">
+  <input type="text" class="search" [value]="nameSearch()" (input)="nameSearch.set($any($event.target).value)"
+         [placeholder]="lang.isGerman() ? 'Nach Ordnername suchen…' : 'Search by folder name…'">
+  <span class="spacer"></span>
+  @if (selected().size) {
+    <span class="count">{{ selected().size }} {{ lang.isGerman() ? 'ausgewählt' : 'selected' }}</span>
+    <button type="button" class="ghost" (click)="openEdit()">
+      {{ lang.isGerman() ? 'Status & Frist ändern' : 'Change status & deadline' }}
+    </button>
+    <button type="button" class="ghost" (click)="openRemind()">
+      {{ lang.isGerman() ? 'Erinnerung senden' : 'Send reminder' }}
+    </button>
+  }
+</div>
+
+@if (remindResult(); as r) {
+  <p class="note" [class.note--error]="r.failed > 0">
+    {{ lang.isGerman() ? r.sent + ' Erinnerung(en) gesendet.' : r.sent + ' reminder(s) sent.' }}
+    @if (r.failed > 0) { {{ lang.isGerman() ? r.failed + ' fehlgeschlagen.' : r.failed + ' failed.' }} }
+  </p>
+}
+
+<div class="scroll">
+  <table>
+    <thead><tr>
+      <th><input type="checkbox" [checked]="allSelected()" (change)="toggleAll($event)" /></th>
+      <th>{{ lang.isGerman() ? 'Fallnummer' : 'Case' }}</th>
+      <th>
+        <im-column-filter [title]="lang.isGerman() ? 'Mitarbeiter' : 'Employee'" [options]="employeeColumnOptions()" [(selected)]="employeeColumnFilter">
+          {{ lang.isGerman() ? 'Mitarbeiter' : 'Employee' }}
+        </im-column-filter>
+      </th>
+      <th>
+        <im-column-filter [title]="lang.t('folders')" [options]="folderColumnOptions()" [(selected)]="folderColumnFilter">
+          {{ lang.t('folders') }}
+        </im-column-filter>
+      </th>
+      <th>
+        <im-column-filter [title]="lang.t('version')" [options]="versionColumnOptions()" [(selected)]="versionColumnFilter">
+          {{ lang.t('version') }}
+        </im-column-filter>
+      </th>
+      <th>
+        <im-column-filter [title]="lang.t('status')" [options]="statusColumnOptions()" [(selected)]="statusColumnFilter">
+          {{ lang.t('status') }}
+        </im-column-filter>
+      </th>
+      <th>
+        <im-column-filter [title]="lang.t('deadline')" [options]="deadlineColumnOptions()" [(selected)]="deadlineColumnFilter">
+          {{ lang.t('deadline') }}
+        </im-column-filter>
+      </th>
+      <th class="reset-col">
+        @if (anyColumnFilterActive()) {
+          <button type="button" class="reset-link" (click)="resetAllColumnFilters()">
+            {{ lang.isGerman() ? 'Filter zurücksetzen' : 'Reset filters' }}
+          </button>
+        }
+      </th>
+    </tr></thead>
+    <tbody>
+      @for (r of pagedRows(); track r.id) {
+        <tr>
+          <td><input type="checkbox" [checked]="selected().has(r.id)" (change)="toggleOne(r.id)" /></td>
+          <td class="mono">{{ r.caseNumber }}</td>
+          <td>{{ r.employee }}</td>
+          <td>{{ r.folderName }}</td>
+          <td class="mono">{{ r.documentVersionLabel }}</td>
+          <td><im-status-badge [status]="r.acknowledgment_picklist_status" /></td>
+          <td class="tabular">{{ r.deadline }}</td>
+          <td></td>
+        </tr>
+      } @empty {
+        <tr><td colspan="8" class="empty">
+          {{ loading()
+            ? (lang.isGerman() ? 'Wird geladen…' : 'Loading…')
+            : (lang.isGerman() ? 'Keine Kenntnisnahmen.' : 'No acknowledgements.') }}
+        </td></tr>
+      }
+    </tbody>
+  </table>
+</div>
+@if (rows().length) {
+  <im-pager [total]="rows().length" [(page)]="currentPage" [(pageSize)]="pageSize" />
+}
+
+@if (editing()) {
+  <div class="backdrop" (click)="editing.set(false)">
+    <div class="dialog" (click)="$event.stopPropagation()" role="dialog" aria-modal="true">
+      <h2>{{ lang.isGerman() ? 'Status & Frist ändern' : 'Change status & deadline' }}</h2>
+      <p class="note">
+        {{ selected().size }} {{ lang.isGerman() ? 'Kenntnisnahmen ausgewählt.' : 'acknowledgements selected.' }}
+      </p>
+      <label>
+        <span class="eyebrow">{{ lang.t('status') }}</span>
+        <select [(ngModel)]="newStatus" name="status">
+          @for (s of statusOptions; track s) { <option [value]="s">{{ s }}</option> }
+        </select>
+      </label>
+      <label>
+        <span class="eyebrow">{{ lang.t('deadline') }}</span>
+        <input type="date" [(ngModel)]="newDeadline" name="deadline" />
+      </label>
+      @if (saveError()) { <p class="note note--error">{{ saveError() }}</p> }
+      <footer>
+        <button type="button" class="ghost" (click)="editing.set(false)">{{ lang.isGerman() ? 'Abbrechen' : 'Cancel' }}</button>
+        <button type="button" class="primary" [disabled]="saving() || !newDeadline()" (click)="saveEdit()">
+          {{ saving() ? (lang.isGerman() ? 'Wird gespeichert…' : 'Saving…') : (lang.isGerman() ? 'Speichern' : 'Save') }}
+        </button>
+      </footer>
+    </div>
+  </div>
+}
+
+@if (remindOpen()) {
+  <div class="backdrop" (click)="remindOpen.set(false)">
+    <div class="dialog" (click)="$event.stopPropagation()" role="dialog" aria-modal="true">
+      <h2>{{ lang.isGerman() ? 'Erinnerungs-E-Mail senden' : 'Send Reminder Email' }}</h2>
+      <p class="note">
+        {{ remindRows().length }} {{ lang.isGerman() ? 'Empfänger · Erinnerung wird an die E-Mail-Adressen der Mitarbeiter gesendet.' : 'recipient(s) · Reminder will be sent to employee email addresses.' }}
+      </p>
+      <label>
+        <span class="eyebrow">{{ lang.isGerman() ? 'AN' : 'TO' }}</span>
+        <div class="chips">
+          @for (r of remindRows(); track r.id) { <span class="chip">{{ r.email || r.employee }}</span> }
+        </div>
+      </label>
+      <label>
+        <span class="eyebrow">{{ lang.isGerman() ? 'BETREFF' : 'SUBJECT' }}</span>
+        <input type="text" [(ngModel)]="remindSubject" name="remindSubject" />
+      </label>
+      <label>
+        <span class="eyebrow">{{ lang.isGerman() ? 'ZUSÄTZLICHE INFORMATIONEN' : 'ADDITIONAL INFORMATION' }}</span>
+        <textarea [(ngModel)]="remindMessage" name="remindMessage" rows="5"></textarea>
+      </label>
+      @if (remindError()) { <p class="note note--error">{{ remindError() }}</p> }
+      <footer>
+        <button type="button" class="ghost" (click)="remindOpen.set(false)">{{ lang.isGerman() ? 'Abbrechen' : 'Cancel' }}</button>
+        <button type="button" class="primary" [disabled]="reminding()" (click)="confirmSendReminders()">
+          {{ reminding() ? (lang.isGerman() ? 'Wird gesendet…' : 'Sending…') : (lang.isGerman() ? 'Erinnerung senden' : 'Send Reminder') }}
+        </button>
+      </footer>
+    </div>
+  </div>
+}

@@ -1,0 +1,20 @@
+<div class="login">
+  <div class="mark">
+    <span class="wordmark">ECAP</span>
+  </div>
+
+  <div class="center">
+    <div class="card">
+      <h1>{{ lang.isGerman() ? 'WILLKOMMEN' : 'WELCOME' }}</h1>
+      <h2>{{ lang.isGerman() ? 'BITTE ANMELDEN' : 'PLEASE LOGIN' }}</h2>
+
+      @if (errorMessage()) {
+        <p class="error">{{ errorMessage() }}</p>
+      }
+
+      <lib-ecap-login
+        (loginSuccessEvent)="onLoginSuccess($event)"
+        (loginErrorEvent)="onLoginError($event)" />
+    </div>
+  </div>
+</div>

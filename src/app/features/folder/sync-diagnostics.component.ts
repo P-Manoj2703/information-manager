@@ -25,48 +25,8 @@ interface ActiveVersion { id: string; versionLabel: string; dateModified: string
 @Component({
   selector: 'im-sync-diagnostics',
   standalone: true,
-  styles: [`
-    .strip { display:flex; gap:0; border-top:1px solid var(--border-dark); padding-top:16px; flex-wrap:wrap; }
-    .cell { flex:1; min-width:150px; padding-right:20px; display:flex; flex-direction:column; gap:5px; }
-    .label { font-size:10px; font-weight:700; letter-spacing:.14em; color:var(--on-dark-4); }
-    .value { font-size:20px; font-weight:300; color:#fff; }
-    .value.bad { color:var(--danger); }
-    .note { font-size:11px; color:var(--on-dark-3); }
-  `],
-  template: `
-    <div class="strip">
-      <div class="cell">
-        <span class="label">{{ lang.isGerman() ? 'AKTIVE VERSION' : 'ACTIVE VERSION' }}</span>
-        <span class="value">{{ activeVersion() ? activeVersion()!.versionLabel + ' ✓' : '—' }}</span>
-        <span class="note">
-          {{ activeVersion()?.dateModified ? (lang.isGerman() ? 'seit ' : 'since ') + lang.date(activeVersion()!.dateModified!) : '' }}
-        </span>
-      </div>
-      <div class="cell">
-        <span class="label">{{ lang.isGerman() ? 'ZIELGRUPPE' : 'AUDIENCE' }}</span>
-        <span class="value">{{ acks().length }} {{ lang.isGerman() ? 'Personen' : 'people' }}</span>
-        <span class="note">
-          {{ orgUnitCount() }} {{ lang.isGerman() ? 'Teams' : 'teams' }} · {{ userCount() }} {{ lang.isGerman() ? 'direkt' : 'direct' }}
-        </span>
-      </div>
-      <div class="cell">
-        <span class="label">{{ lang.isGerman() ? 'KENNTNISNAHMEN' : 'ACKNOWLEDGEMENTS' }}</span>
-        <span class="value" [class.bad]="stats().overdue > 0">{{ acks().length }}</span>
-        <span class="note">
-          {{ stats().done }} {{ lang.isGerman() ? 'erledigt' : 'done' }} · {{ stats().overdue }} {{ lang.isGerman() ? 'überfällig' : 'overdue' }}
-        </span>
-      </div>
-      <div class="cell">
-        <span class="label">{{ lang.isGerman() ? 'FRIST' : 'DEADLINE' }}</span>
-        <span class="value">{{ dueDate() ? lang.date(dueDate()!) : '—' }}</span>
-        <span class="note">
-          {{ activeVersion()?.dateModified
-            ? (lang.isGerman() ? 'seit ' : 'since ') + lang.date(activeVersion()!.dateModified!) + ', ' + deadlineDays() + (lang.isGerman() ? ' Tage' : ' days')
-            : '' }}
-        </span>
-      </div>
-    </div>
-  `
+  templateUrl: './sync-diagnostics.component.html',
+  styleUrl: './sync-diagnostics.component.scss'
 })
 export class SyncDiagnosticsComponent {
   private readonly http = inject(HttpClient);

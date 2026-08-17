@@ -1,0 +1,45 @@
+<ng-container [libEcapRuntimeRecordList]="folderPayload()"
+  (apiResponseEvent)="onFolders($event)" (apiErrorEvent)="onFoldersError($event)">
+</ng-container>
+<ng-container [libEcapRuntimeRecordList]="ackPayload()"
+  (apiResponseEvent)="onAcks($event)" (apiErrorEvent)="onAcksError($event)">
+</ng-container>
+
+
+<div class="bar">
+  <im-filter-chips [chips]="chips()" [(value)]="confidentialityFilter" />
+  <span class="spacer"></span>
+  <span class="count">
+    {{ visibleFolders().length }} {{ lang.isGerman() ? 'Mappen' : 'folders' }}
+  </span>
+</div>
+<div class="search-bar">
+  <input type="text" class="search" [value]="nameSearch()" (input)="nameSearch.set($any($event.target).value)"
+         [placeholder]="lang.isGerman() ? 'Nach Name suchen…' : 'Search by name…'">
+</div>
+
+<div class="grid">
+  @for (f of visibleFolders(); track f.id) {
+    <a class="tile" routerLink="/acknowledgements" [queryParams]="{ folder: f.name }">
+      <div class="badges">
+        <im-status-badge [status]="f.acknowledgmentStatus" />
+        @if (f.confidentiality) { <span class="pill">{{ f.confidentiality }}</span> }
+      </div>
+      <h2>{{ f.name }}</h2>
+      <span class="meta">{{ metaLine(f) }}</span>
+      <im-completion-bar [data]="stats(f.name)" [showLegend]="false" />
+      <div class="foot">
+        <span class="pct">{{ stats(f.name).pct }}% {{ lang.isGerman() ? 'bestätigt' : 'confirmed' }}</span>
+        <span class="trailing" [class.trailing--danger]="oldestOverdueDays(f.name) > 0">{{ trailing(f) }}</span>
+      </div>
+    </a>
+  } @empty {
+    <p class="empty">
+      {{ loading()
+        ? (lang.isGerman() ? 'Wird geladen…' : 'Loading…')
+        : confidentialityFilter() !== 'all'
+          ? (lang.isGerman() ? 'Keine Informationsmappen mit dieser Vertraulichkeit.' : 'No information folders with this confidentiality level.')
+          : (lang.isGerman() ? 'Noch keine Informationsmappen.' : 'No information folders yet.') }}
+    </p>
+  }
+</div>

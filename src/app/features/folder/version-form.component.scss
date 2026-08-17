@@ -1,0 +1,4 @@
+.back { display:inline-block; margin-bottom:16px; font-size:13px; color:var(--fg-3); text-decoration:none;
+        &:hover { color:var(--escriba-teal-700); } }
+.warn { background:#fdf6ec; border:1px solid #f6e0c0; border-radius:var(--radius-input);
+        padding:14px 18px; font-size:13px; color:#8a5a20; line-height:1.6; margin-bottom:18px; max-width:900px; }

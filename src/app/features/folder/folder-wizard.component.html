@@ -1,0 +1,110 @@
+<a class="back" routerLink="/folders">← {{ lang.t('folders') }}</a>
+
+<ol class="rail">
+  @for (s of steps; track s.n) {
+    <li class="rail__step" [class.on]="step() === s.n" [class.past]="step() > s.n"
+        [class.disabled]="s.n > 1 && !folderId()" (click)="goToStep(s.n)">
+      <span class="rail__num">{{ s.n }}</span>
+      <span>{{ lang.isGerman() ? s.de : s.en }}</span>
+    </li>
+  }
+</ol>
+
+@if (createPayload()) {
+  <ng-container
+    [libEcapRuntimeRecordCreate]="createPayload()"
+    [objectId]="OBJECT_ID.informationFolder"
+    (apiResponseEvent)="onCreateResponse($event)"
+    (apiErrorEvent)="onCreateError($event)">
+  </ng-container>
+}
+
+@if (visitedSteps().has(1)) {
+    <form class="card" [style.display]="step() === 1 ? null : 'none'" [formGroup]="form" (ngSubmit)="saveDraft()">
+      <h2><span class="step-num">1</span> · {{ lang.isGerman() ? 'Metadaten' : 'Metadata' }}</h2>
+
+      @if (createError()) {
+        <p class="error">{{ createError() }}</p>
+      }
+      <div class="grid">
+        <label>{{ lang.isGerman() ? 'Name' : 'Name' }} *
+          <input formControlName="information_folder_textfield_name" required>
+        </label>
+        <label>{{ lang.isGerman() ? 'Kurzname' : 'Short name' }}
+          <input formControlName="information_folder_textfield_short_name">
+        </label>
+        <label>{{ lang.isGerman() ? 'Frist (Tage)' : 'Deadline (days)' }} *
+          <input type="number" min="1" formControlName="information_folder_number_deadlinedays" required>
+          @if (deadlineDays.invalid && deadlineDays.touched) {
+            <small class="field-error">{{ lang.isGerman() ? 'Bitte eine Zahl ab 1 eingeben.' : 'Please enter a number of days (1 or more).' }}</small>
+          } @else {
+            <small>{{ lang.isGerman() ? 'Zeit zur Bestätigung, gezählt ab Aktivierung' : 'Time to confirm, counted from activation' }}</small>
+          }
+        </label>
+        <label>{{ lang.isGerman() ? 'Verantwortliches Team' : 'Responsible team' }} *
+          <select formControlName="information_folder_lookup_responsible_team" required>
+            <option value="" disabled>{{ lang.isGerman() ? 'Bitte wählen' : 'Select a team' }}</option>
+            @for (t of myTeams(); track t.recordId) {
+              <option [value]="t.recordId">{{ t.teamName }}</option>
+            }
+          </select>
+        </label>
+        <label>{{ lang.isGerman() ? 'Dokumentkategorie' : 'Document category' }}
+          <input formControlName="information_folder_textfield_document_category">
+          <small>{{ lang.isGerman() ? 'Freitext im aktuellen Tenant' : 'Free text in the current tenant' }}</small>
+        </label>
+        <label>{{ lang.isGerman() ? 'Vertraulichkeit' : 'Confidentiality level' }} *
+          <select formControlName="information_folder_picklist_confidentiality_level">
+            <option value="Internal">Internal</option>
+            <option value="Public">Public</option>
+            <option value="Confidential">Confidential</option>
+          </select>
+        </label>
+        <label>{{ lang.isGerman() ? 'Beschreibung' : 'Description' }}
+          <textarea rows="3" formControlName="information_folder_textfield_description"></textarea>
+        </label>
+        <label>{{ lang.isGerman() ? 'Dokumentsprache' : 'Document language' }}
+          <im-multi-select-dropdown [options]="documentLanguages()"
+            formControlName="information_folder_multi_select_picklist_document_language" />
+        </label>
+        <label>{{ lang.isGerman() ? 'Status' : 'Status' }}
+          <input value="Draft" disabled>
+        </label>
+      </div>
+
+      <label class="rich">
+        {{ lang.isGerman() ? 'Nachricht an Empfänger' : 'Message to recipients' }} *
+        <small>{{ lang.isGerman()
+          ? 'Wird auf jede Kenntnisnahme kopiert. Das ist der Text, den Empfänger lesen.'
+          : 'Copied onto every acknowledgement. This is the text recipients read.' }}</small>
+        <textarea rows="6" formControlName="information_folder_richtext_area_user_information"></textarea>
+      </label>
+
+      <footer>
+        <p class="hint">{{ lang.isGerman()
+          ? 'Speichern legt den Ordner im Status „Entwurf" an. Zielgruppe und Version folgen in Schritt 2 und 3 — es werden noch keine Benachrichtigungen versendet.'
+          : 'Saving creates the folder in Draft. Audience and version follow in steps 2 and 3 — no notifications are sent yet.' }}</p>
+        <button class="primary" [disabled]="busy()">
+          {{ busy() ? (lang.isGerman() ? 'Wird gespeichert…' : 'Saving…') : (lang.isGerman() ? 'Speichern und weiter' : 'Save and continue') }}
+        </button>
+      </footer>
+    </form>
+}
+<!--
+  Mounted unconditionally (not gated by visitedSteps, unlike steps 3/4 below) so its own
+  tenant-wide lookups — Teams, Users, Distribution Templates, all independent of folderId —
+  start fetching immediately in the background while the user is still on Metadata, instead
+  of only starting once they actually click through to this step. The component's own
+  folderId effect (see its constructor) only fires loadLinkedOrgUnits/loadLinkedEmployees
+  once folderId() actually becomes real, so this is safe to render before the folder exists.
+-->
+<im-audience-builder [style.display]="step() === 2 ? null : 'none'" [folderId]="folderId()" (continue)="onAudienceContinue($event)" (back)="goToStep(1)" />
+@if (visitedSteps().has(3)) {
+  <im-version-upload [style.display]="step() === 3 ? null : 'none'" [folderId]="folderId()" [folderName]="form.getRawValue().information_folder_textfield_name"
+                      (continue)="onVersionSaved($event)" (back)="goToStep(2)" />
+}
+@if (visitedSteps().has(4)) {
+  <im-activate-dialog [style.display]="step() === 4 ? null : 'none'" [folderId]="folderId()" [versionId]="versionRecordId()" [teamCount]="teamCount()" [userCount]="userCount()"
+                      [confidentialityLevel]="form.getRawValue().information_folder_picklist_confidentiality_level"
+                      [supersedes]="null" [deadlineDays]="form.getRawValue().information_folder_number_deadlinedays ?? 0" (back)="goToStep(3)" />
+}

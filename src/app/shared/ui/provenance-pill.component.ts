@@ -12,16 +12,8 @@ const LABEL: Record<Provenance, [string, string]> = {
 @Component({
   selector: 'im-provenance-pill',
   standalone: true,
-  styles: [`
-    span {
-      font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
-      border-radius: var(--radius-pill); padding: 3px 9px; white-space: nowrap;
-    }
-    .direct { background: var(--bg-mint); color: var(--escriba-teal-700); }
-    .team { background: var(--bg-3); color: var(--fg-2); }
-    .hierarchy { background: #fff; color: var(--fg-3); border: 1px dashed var(--border-2); }
-  `],
-  template: `<span [class]="kind()">{{ label() }}</span>`
+  templateUrl: './provenance-pill.component.html',
+  styleUrl: './provenance-pill.component.scss'
 })
 export class ProvenancePillComponent {
   private readonly lang = inject(LanguageService);

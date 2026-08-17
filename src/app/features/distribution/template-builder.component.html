@@ -1,0 +1,176 @@
+<a class="back" routerLink="/templates">← {{ lang.t('templates') }}</a>
+
+@if (createPayload()) {
+  <ng-container
+    [libEcapRuntimeRecordCreate]="createPayload()"
+    [objectId]="OBJECT_ID.distributionTemplate"
+    (apiResponseEvent)="onCreateResponse($event)"
+    (apiErrorEvent)="onCreateError($event)">
+  </ng-container>
+}
+
+<section class="card">
+  <header class="head">
+    <label class="name-field">
+      {{ lang.isGerman() ? 'Name der Vorlage' : 'Template name' }} *
+      <input [value]="name()" (input)="name.set($any($event.target).value)"
+             [placeholder]="lang.isGerman() ? 'z. B. Alle Standorte DACH' : 'e.g. All DACH locations'">
+    </label>
+    @if (templateId() && !editingMeta()) {
+      <div class="stats" aria-live="polite">
+        <div class="stat">
+          <span class="eyebrow">{{ lang.isGerman() ? 'Organisationseinheiten' : 'Organisational units' }}</span>
+          <strong>{{ linkedTeams().length }}</strong>
+        </div>
+        <div class="stat">
+          <span class="eyebrow">{{ lang.t('users') }}</span>
+          <strong>{{ linkedUsers().length }}</strong>
+        </div>
+      </div>
+    }
+  </header>
+
+  @if (createError()) { <p class="error">{{ createError() }}</p> }
+
+  @if (!templateId() || editingMeta()) {
+    <label class="name-field">
+      {{ lang.isGerman() ? 'Beschreibung' : 'Description' }}
+      <input [value]="description()" (input)="description.set($any($event.target).value)">
+    </label>
+    <footer>
+      @if (templateId()) {
+        <button type="button" class="ghost" (click)="cancelEditMeta()">{{ lang.isGerman() ? 'Abbrechen' : 'Cancel' }}</button>
+      } @else {
+        <a class="ghost" routerLink="/templates">{{ lang.isGerman() ? 'Abbrechen' : 'Cancel' }}</a>
+      }
+      <button type="button" class="primary" [disabled]="!name().trim() || creating()" (click)="save()">
+        {{ creating() ? (lang.isGerman() ? 'Wird gespeichert…' : 'Saving…') : (lang.isGerman() ? 'Speichern' : 'Save') }}
+      </button>
+    </footer>
+  } @else {
+    @if (teamError()) { <p class="error">{{ teamError() }}</p> }
+    @if (userError()) { <p class="error">{{ userError() }}</p> }
+
+    <div class="panels">
+      <div class="panel">
+        <header>
+          <span class="panel__title">{{ lang.isGerman() ? 'Organisationseinheiten' : 'Organisational units' }}
+            <span class="panel__count">{{ linkedTeams().length }}</span></span>
+          <button type="button" class="plus-btn" (click)="showTeamPicker.set(!showTeamPicker())">
+            <span class="plus">+</span> {{ lang.isGerman() ? 'Hinzufügen' : 'Add' }}
+          </button>
+        </header>
+
+        @for (t of topLevelLinkedTeams(); track t.recordId) {
+          <div class="row">
+            <div class="row__main">
+              <div class="row__name">
+                <strong>{{ t.teamName }}</strong>
+                <small>
+                  @if (t.includeTeamHierarchy) {
+                    {{ memberCountFor(t.teamId) }} {{ lang.isGerman() ? 'direkt' : 'direct' }}
+                    @if (subTeamMemberCount(t.teamId)) {
+                      · {{ subTeamMemberCount(t.teamId) }} {{ lang.isGerman() ? 'aus Unterteams' : 'from sub-teams' }}
+                    }
+                  } @else {
+                    {{ memberCountFor(t.teamId) }} {{ lang.isGerman() ? 'Mitglieder' : 'members' }}
+                  }
+                </small>
+              </div>
+              <label class="switch switch--locked" [attr.title]="lang.isGerman() ? 'Nur bei Hinzufügen wählbar' : 'Only selectable when adding'">
+                <input type="checkbox" class="switch__input" [checked]="t.includeTeamHierarchy" disabled>
+                <span class="switch__track" [class.switch__track--on]="t.includeTeamHierarchy">
+                  <span class="switch__thumb"></span>
+                </span>
+                <span class="switch__label">{{ lang.isGerman() ? 'Hierarchie' : 'Hierarchy' }}</span>
+              </label>
+              <button type="button" class="x" (click)="removeTeam(t.recordId)" aria-label="remove">×</button>
+            </div>
+            @if (t.includeTeamHierarchy && linkedDescendantsOf(t.teamId).length) {
+              <ul class="tree">
+                @for (c of linkedDescendantsOf(t.teamId); track c.id) {
+                  <li>
+                    <span>{{ c.name }}</span>
+                    <span class="tree__count">{{ lang.isGerman() ? 'auto-verknüpft' : 'auto-linked' }} · {{ memberCountFor(c.id) }}</span>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+        }
+
+        @if (showTeamPicker()) {
+          <div class="picker">
+            <input type="text" class="lookup__input" [value]="teamQuery()"
+                   (input)="teamQuery.set($any($event.target).value)"
+                   [placeholder]="lang.isGerman() ? 'Team suchen…' : 'Search teams…'">
+            <label class="switch">
+              <input type="checkbox" class="switch__input" [checked]="newTeamIncludeHierarchy()"
+                     (change)="newTeamIncludeHierarchy.set(!newTeamIncludeHierarchy())">
+              <span class="switch__track"><span class="switch__thumb"></span></span>
+              <span class="switch__label">{{ lang.isGerman() ? 'Team-Hierarchie einschließen' : 'Include team hierarchy' }}</span>
+            </label>
+            @if (teamsLoading()) {
+              <span class="lookup__empty">{{ lang.isGerman() ? 'Teams werden geladen…' : 'Loading teams…' }}</span>
+            }
+            <div class="add">
+              @for (t of addableTeams(); track t.id) {
+                <button type="button" (click)="addTeam(t.id, t.name)">+ {{ t.name }}</button>
+              } @empty {
+                @if (!teamsLoading() && teamQuery().trim()) {
+                  <span class="lookup__empty">{{ lang.isGerman() ? 'Keine Teams gefunden' : 'No teams found' }}</span>
+                }
+              }
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="panel">
+        <header>
+          <span class="panel__title">{{ lang.t('users') }}
+            <span class="panel__count">{{ linkedUsers().length }}</span></span>
+          <button type="button" class="plus-btn" (click)="showUserPicker.set(!showUserPicker())">
+            <span class="plus">+</span> {{ lang.isGerman() ? 'Hinzufügen' : 'Add' }}
+          </button>
+        </header>
+
+        @if (showUserPicker()) {
+          <div class="picker">
+            <input type="text" class="lookup__input" [value]="userQuery()"
+                   (input)="userQuery.set($any($event.target).value)"
+                   [placeholder]="lang.isGerman() ? 'Person suchen…' : 'Search people…'">
+            @if (usersLoading()) {
+              <span class="lookup__empty">{{ lang.isGerman() ? 'Personen werden geladen…' : 'Loading people…' }}</span>
+            }
+            <div class="lookup__results">
+              @for (u of addableUsers(); track u.id) {
+                <button type="button" (click)="addUser(u.id, u.label)">+ {{ u.label }}</button>
+              } @empty {
+                @if (!usersLoading() && userQuery().trim()) {
+                  <span class="lookup__empty">{{ lang.isGerman() ? 'Keine Treffer' : 'No matches' }}</span>
+                }
+              }
+            </div>
+          </div>
+        }
+
+        <div class="roster">
+          @for (u of linkedUsers(); track u.recordId) {
+            <div class="person">
+              <div class="person__id">
+                <span class="person__name">{{ u.userLabel }}</span>
+              </div>
+              <button type="button" class="x" (click)="removeUser(u.recordId)" aria-label="remove">×</button>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <button type="button" class="ghost" (click)="backToEditMeta()">{{ lang.isGerman() ? 'Zurück' : 'Back' }}</button>
+      <a class="primary" routerLink="/templates">{{ lang.isGerman() ? 'Fertig' : 'Done' }}</a>
+    </footer>
+  }
+</section>

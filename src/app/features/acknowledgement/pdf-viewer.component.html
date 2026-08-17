@@ -1,0 +1,26 @@
+<div class="frame">
+  <div class="bar">
+    <strong>{{ lang.isGerman() ? 'Dokument' : 'Document' }}</strong>
+    @if (previewName()) {
+      <span class="doc-pill">{{ previewName() }}</span>
+    }
+    <span class="spacer"></span>
+    @if (canDownloadAll() && documents().length > 0) {
+      <button type="button" class="ghost" (click)="downloadAll()">{{ lang.t('downloadAll') }}</button>
+    }
+  </div>
+
+  @if (documentsLoading()) {
+    <p class="empty">{{ lang.isGerman() ? 'Wird geladen…' : 'Loading…' }}</p>
+  } @else if (!documents().length) {
+    <p class="empty">
+      {{ lang.isGerman() ? 'Für diese Version wurde noch kein Dokument hochgeladen.' : 'No document has been uploaded for this version yet.' }}
+    </p>
+  } @else if (previewError()) {
+    <p class="preview__status">{{ previewError() }}</p>
+  } @else if (previewUrl()) {
+    <iframe class="preview__frame" [src]="previewUrl()"></iframe>
+  } @else {
+    <p class="preview__status">{{ lang.isGerman() ? 'Wird geladen…' : 'Loading…' }}</p>
+  }
+</div>

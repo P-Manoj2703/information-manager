@@ -1,0 +1,38 @@
+<button type="button" class="trigger" [class.active]="selected().length" (click)="toggle($event)">
+  <ng-content></ng-content>
+  <span class="chevron">▾</span>
+</button>
+
+@if (open()) {
+  <div class="panel" [style.top.px]="panelTop()" [style.left.px]="panelLeft()" (click)="$event.stopPropagation()">
+    <div class="panel__title">{{ title() }}</div>
+    <input class="panel__search" type="text" [value]="query()"
+           (input)="query.set($any($event.target).value)"
+           [placeholder]="lang.isGerman() ? 'Suchen oder auswählen…' : 'Search or select…'">
+
+    <div class="panel__list">
+      <label class="panel__row panel__row--all">
+        <input type="checkbox" [checked]="allChecked()" (change)="toggleAll()">
+        {{ lang.isGerman() ? 'Alle auswählen' : 'Select All' }}
+      </label>
+      @for (o of filteredOptions(); track o.value) {
+        <label class="panel__row">
+          <input type="checkbox" [checked]="draft().includes(o.value)" (change)="toggleOne(o.value)">
+          {{ o.label }}
+        </label>
+      } @empty {
+        <p class="panel__empty">{{ lang.isGerman() ? 'Keine Treffer' : 'No matches' }}</p>
+      }
+    </div>
+
+    <div class="panel__footer">
+      <span class="panel__count">{{ draft().length }} / {{ options().length }}</span>
+      <button type="button" class="panel__reset" (click)="reset()">
+        {{ lang.isGerman() ? 'Filter zurücksetzen' : 'Reset Filter' }}
+      </button>
+      <button type="button" class="panel__apply" (click)="apply()">
+        {{ lang.isGerman() ? 'Auswählen' : 'Select' }}
+      </button>
+    </div>
+  </div>
+}

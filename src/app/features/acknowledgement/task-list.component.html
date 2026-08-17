@@ -1,0 +1,67 @@
+@for (payload of payloads(); track $index) {
+  <ng-container
+    [libEcapRuntimeRecordList]="payload"
+    (apiResponseEvent)="onResponse($index, $event)"
+    (apiErrorEvent)="onError($index, $event)">
+  </ng-container>
+}
+
+<section class="page">
+
+  <div class="kpis">
+    <div class="kpi"><span class="eyebrow">{{ lang.isGerman() ? 'OFFEN' : 'OPEN' }}</span><strong>{{ counts().open }}</strong></div>
+    <div class="kpi kpi--danger"><span class="eyebrow">{{ lang.isGerman() ? 'ÜBERFÄLLIG' : 'OVERDUE' }}</span><strong>{{ counts().overdue }}</strong></div>
+    <div class="kpi"><span class="eyebrow">{{ lang.isGerman() ? 'ERLEDIGT' : 'DONE' }}</span><strong>{{ counts().done }}</strong></div>
+  </div>
+
+  <im-filter-chips [chips]="chips()" [(value)]="filter" />
+
+  <ul class="list">
+    @for (a of pagedVisible(); track a.id) {
+      <li class="item" [class.item--overdue]="a.acknowledgment_picklist_status === 'Overdue'">
+        <div class="item__body">
+          <div class="item__meta">
+            <im-status-badge [status]="a.acknowledgment_picklist_status" />
+            <span class="mono chip">{{ a.documentVersionLabel }}</span>
+            @if (a.acknowledgment_picklist_status === 'Done') {
+              <span class="confirmed">{{ confirmedLabel(a) }}</span>
+            } @else {
+              <span class="due" [class.due--late]="a.acknowledgment_picklist_status === 'Overdue'">{{ due(a) }}</span>
+            }
+          </div>
+          <h2>{{ a.folderName }}</h2>
+          @if (userInformationFor(a.id)) {
+            <p [innerHTML]="userInformationFor(a.id)"></p>
+          }
+          @if (tagLineFor(a)) {
+            <span class="tagline">{{ tagLineFor(a) }}</span>
+          }
+        </div>
+        @if (a.acknowledgment_picklist_status === 'Done') {
+          <a class="btn btn--outline" [routerLink]="['/tasks', a.id, 'receipt']">
+            {{ lang.isGerman() ? 'Quittung ansehen' : 'View receipt' }}
+          </a>
+        } @else if (a.acknowledgment_picklist_status === 'Obsolete') {
+          <a class="btn btn--outline" [routerLink]="['/tasks', a.id]">
+            {{ lang.isGerman() ? 'Ansehen' : 'View' }}
+          </a>
+        } @else {
+          <a class="btn" [routerLink]="['/tasks', a.id]">
+            {{ lang.isGerman() ? 'Öffnen und bestätigen' : 'Open and confirm' }}
+          </a>
+        }
+      </li>
+    } @empty {
+      @if (loading()) {
+        <im-empty-state [title]="lang.isGerman() ? 'Wird geladen…' : 'Loading…'" />
+      } @else {
+        <im-empty-state [title]="lang.isGerman() ? 'Nichts zu tun' : 'Nothing to do'"
+                        [body]="lang.isGerman() ? 'Sie haben in dieser Ansicht keine offenen Kenntnisnahmen.' : 'You have no outstanding acknowledgements in this view.'" />
+      }
+    }
+  </ul>
+
+  @if (visible().length) {
+    <im-pager [total]="visible().length" [(page)]="currentPage" [(pageSize)]="pageSize" />
+  }
+</section>

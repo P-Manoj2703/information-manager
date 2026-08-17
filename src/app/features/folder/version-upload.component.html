@@ -1,0 +1,107 @@
+<section class="card">
+  <h2><span class="step-num">3</span> · {{ lang.isGerman() ? 'Dokumentversion' : 'Document version' }}</h2>
+  <p class="subtitle">{{ lang.isGerman()
+    ? 'Nur PDF. Die Version bleibt im Entwurf, bis Sie sie aktivieren.'
+    : 'PDF only. The version stays in Draft until you activate it.' }}</p>
+
+  @if (createError()) { <p class="error">{{ createError() }}</p> }
+
+  @if (createPayload()) {
+    <ng-container
+      [libEcapRuntimeRecordCreate]="createPayload()"
+      [objectId]="OBJECT_ID.documentVersion"
+      (apiResponseEvent)="onCreateResponse($event)"
+      (apiErrorEvent)="onCreateError($event)">
+    </ng-container>
+  }
+
+  <form [formGroup]="form" class="grid">
+    <label>{{ lang.isGerman() ? 'Informationsordner' : 'Information Folder' }} *
+      <input [value]="folderName()" disabled>
+    </label>
+    <label>{{ lang.isGerman() ? 'Versionsstatus' : 'Version Status' }}
+      <input value="Draft" disabled>
+    </label>
+    <label>{{ lang.isGerman() ? 'Name' : 'Name' }} *
+      <input formControlName="document_version_textfield_name">
+      @if (nameControl.invalid && nameControl.touched) {
+        <small class="field-error">{{ lang.isGerman() ? 'Bitte einen Namen eingeben.' : 'Please enter a name.' }}</small>
+      }
+    </label>
+    <label>{{ lang.t('version') }} *
+      <input formControlName="version_text_field_version_id" placeholder="v1.0">
+      @if (versionIdControl.invalid && versionIdControl.touched) {
+        <small class="field-error">{{ lang.isGerman() ? 'Bitte eine Versionsbezeichnung eingeben.' : 'Please enter a version label.' }}</small>
+      }
+    </label>
+    <label class="wide">{{ lang.isGerman() ? 'Beschreibung' : 'Description' }}
+      <textarea rows="3" formControlName="version_textarea_description"></textarea>
+    </label>
+  </form>
+
+  @if (!session.canUploadFiles()) {
+    <p class="denied">{{ serverMessages.recipientForbidden }}</p>
+  } @else {
+    <div class="drop" (dragover)="$event.preventDefault()" (drop)="onDrop($event)">
+      <strong>{{ lang.isGerman() ? 'PDF hierher ziehen' : 'Drag your PDF here' }}</strong>
+      <span>{{ lang.t('pdfOnly') }}</span>
+      <input #picker type="file" accept="application/pdf" multiple hidden (change)="onPick($event)">
+      <button type="button" class="ghost" (click)="picker.click()">
+        {{ lang.isGerman() ? 'Datei wählen' : 'Choose file' }}
+      </button>
+    </div>
+
+    <ul class="files">
+      @for (r of rows(); track r.file.name) {
+        <li [class.error]="r.state === 'error'">
+          <span class="kind">{{ ext(r.file.name) }}</span>
+          <span class="meta">
+            <strong>{{ r.file.name }}</strong>
+            <small [class.msg]="r.state === 'error'">{{ rowStatus(r) }}</small>
+          </span>
+          <span class="pill" [class.pill--error]="r.state === 'error'" [class.pill--pending]="r.state === 'queued' || r.state === 'uploading'">
+            {{ pillLabel(r) }}
+          </span>
+          @if (r.state !== 'uploading') {
+            <button type="button" class="x" [disabled]="r.deleting" (click)="removeFile(r)" aria-label="remove">×</button>
+          }
+        </li>
+      }
+    </ul>
+
+    @if (deleteError()) { <p class="error">{{ deleteError() }}</p> }
+
+    <p class="count">
+      {{ lang.isGerman() ? 'Dokumente gesamt (automatisch)' : 'Total documents (maintained automatically)' }}
+      <b>{{ okCount() }}</b>
+    </p>
+  }
+
+  @if (folderActivateError()) { <p class="error">{{ folderActivateError() }}</p> }
+  @if (folderActivating()) {
+    <p class="count">{{ lang.isGerman() ? 'Informationsordner wird aktiviert…' : 'Activating information folder…' }}</p>
+  }
+  @if (folderActivated()) {
+    <p class="count">{{ lang.isGerman() ? 'Informationsordner ist jetzt aktiv.' : 'Information folder is now active.' }}</p>
+  }
+
+  <footer>
+    <span class="spacer"></span>
+    <button type="button" class="ghost" (click)="onBackClick()">{{ lang.isGerman() ? 'Zurück' : 'Back' }}</button>
+    @if (!versionRecordId()) {
+      <button class="primary" [disabled]="creating()" (click)="save()">
+        {{ creating()
+          ? (lang.isGerman() ? 'Wird gespeichert…' : 'Saving…')
+          : (lang.isGerman() ? 'Speichern' : 'Save') }}
+      </button>
+    } @else if (editingVersion()) {
+      <button class="primary" [disabled]="updating()" (click)="saveChanges()">
+        {{ updating()
+          ? (lang.isGerman() ? 'Wird gespeichert…' : 'Saving…')
+          : (lang.isGerman() ? 'Änderungen speichern' : 'Save changes') }}
+      </button>
+    } @else {
+      <button class="primary" (click)="continue.emit(versionRecordId() ?? '')">{{ lang.isGerman() ? 'Weiter zur Veröffentlichung' : 'Continue to publish' }}</button>
+    }
+  </footer>
+</section>

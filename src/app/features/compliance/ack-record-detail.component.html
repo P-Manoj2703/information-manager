@@ -1,0 +1,123 @@
+@if (justConfirmed()) {
+  @if (ack(); as a) {
+    <div class="receipt-page">
+      <section class="receipt">
+        <span class="tick" aria-hidden="true">✓</span>
+        <h1>{{ lang.isGerman() ? 'Kenntnisnahme bestätigt' : 'Acknowledgement confirmed' }}</h1>
+        <p class="receipt__note">
+          {{ lang.isGerman()
+            ? 'Die Bestätigung wurde erfasst. Sie finden diese Quittung jederzeit unter „Erledigt".'
+            : 'This confirmation has been recorded. You can find this receipt any time under "Done".' }}
+        </p>
+        <dl>
+          <div><dt>{{ lang.isGerman() ? 'Dokument' : 'Document' }}</dt><dd>{{ a.acknowledgement_textfield_information_folder_name }}</dd></div>
+          <div><dt>{{ lang.t('version') }}</dt><dd class="mono">{{ a.documentVersionLabel }}</dd></div>
+          <div><dt>{{ lang.isGerman() ? 'Bestätigt von' : 'Confirmed by' }}</dt><dd>{{ session.session().displayName }}</dd></div>
+          <div><dt>{{ lang.isGerman() ? 'Zeitpunkt' : 'Timestamp' }}</dt><dd class="tabular">{{ confirmedAt() }}</dd></div>
+          <div><dt>{{ lang.isGerman() ? 'Fallnummer' : 'Case number' }}</dt><dd class="mono">{{ a.id }}</dd></div>
+        </dl>
+        <a class="confirm" routerLink="/acknowledgements">{{ lang.isGerman() ? 'Zurück zur Liste' : 'Back to list' }}</a>
+      </section>
+    </div>
+  }
+} @else {
+  <a class="back" routerLink="/acknowledgements">← {{ lang.t('acknowledgements') }}</a>
+
+  @if (ack(); as a) {
+    <div class="layout">
+      <section class="card">
+        <header class="head">
+          <im-status-badge [status]="a.acknowledgment_picklist_status" />
+          <h1>{{ a.acknowledgment_textfield_employee }}</h1>
+        </header>
+
+        <div class="grid">
+          <div class="field">
+            <span class="label">{{ lang.isGerman() ? 'Mitarbeiter' : 'Employee' }}</span>
+            <span>{{ a.acknowledgment_textfield_employee }}</span>
+          </div>
+          <div class="field">
+            <span class="label">{{ lang.t('version') }}</span>
+            <span class="mono">{{ a.documentVersionLabel || '—' }}</span>
+          </div>
+          <div class="field wide">
+            <span class="label">{{ lang.isGerman() ? 'Beschreibung' : 'Description' }}</span>
+            <span>{{ a.description || '—' }}</span>
+          </div>
+          <div class="field">
+            <span class="label">{{ lang.t('status') }}</span>
+            <im-status-badge [status]="a.acknowledgment_picklist_status" [dot]="false" />
+          </div>
+          <div class="field">
+            <span class="label">{{ lang.t('deadline') }}</span>
+            <span>{{ a.acknowledgement_date_deadline_date ? lang.date(a.acknowledgement_date_deadline_date) : '—' }}</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="task">
+        @if (canConfirm(a)) {
+          <span class="eyebrow eyebrow--teal">{{ lang.t('yourTask') }}</span>
+          <h2>{{ lang.isGerman() ? 'Bestätigen Sie, dass dieses Dokument gelesen wurde.' : 'Confirm that this document has been read.' }}</h2>
+          <dl>
+            <div><dt>{{ lang.t('deadline') }}</dt><dd class="tabular">{{ lang.date(a.acknowledgement_date_deadline_date) }}</dd></div>
+            <div><dt>{{ lang.t('version') }}</dt><dd class="mono">{{ a.documentVersionLabel }}</dd></div>
+            <div><dt>{{ lang.t('status') }}</dt><dd>{{ a.acknowledgment_picklist_status }}</dd></div>
+          </dl>
+          <button type="button" class="confirm" [disabled]="busy()" (click)="confirm(a)">
+            {{ lang.t('confirmButton') }}
+          </button>
+          @if (confirmError()) { <p class="note note--error">{{ confirmError() }}</p> }
+        } @else if (a.taskId) {
+          <span class="eyebrow">{{ lang.isGerman() ? 'NUR ANSICHT' : 'VIEW ONLY' }}</span>
+          <p class="note note--dark">
+            {{ lang.isGerman()
+                ? 'Diese Kenntnisnahme ist ' + a.acknowledgment_textfield_employee + ' zugewiesen. Nur diese Person kann sie bestätigen.'
+                : 'This acknowledgement is assigned to ' + a.acknowledgment_textfield_employee + '. Only they can confirm it.' }}
+          </p>
+        } @else {
+          <span class="eyebrow">{{ lang.isGerman() ? 'LESEANSICHT' : 'READING VIEW' }}</span>
+          <p class="note note--dark">
+            {{ lang.isGerman()
+                ? 'Für diese Version ist keine Bestätigung (mehr) erforderlich.'
+                : 'No confirmation is (still) required for this version.' }}
+          </p>
+        }
+      </div>
+
+      @if (canSeeDocuments(a)) {
+        <div class="full docs-row">
+          <im-pdf-viewer [versionId]="a.documentVersionId" [canDownloadAll]="true"
+                         [(previewDocId)]="selectedDocId" (documentsChange)="documents.set($event)" />
+          @if (documents().length) {
+            <div class="doc-picker">
+              <span class="doc-picker__count">{{ documents().length }} {{ lang.isGerman() ? 'Dokumente' : 'documents' }}</span>
+              <ul class="doc-picker__list">
+                @for (d of documents(); track d.id) {
+                  <li class="doc-picker__row" [class.doc-picker__row--active]="selectedDocId() === d.id">
+                    <button type="button" class="doc-picker__name" (click)="selectedDocId.set(d.id)">{{ d.name }}</button>
+                    <a class="doc-picker__download" [href]="downloadUrl(a.documentVersionId, d.id)"
+                       [download]="d.name + '.' + d.fileExtension"
+                       [attr.aria-label]="lang.isGerman() ? 'Herunterladen' : 'Download'">⬇</a>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </div>
+      } @else {
+        <p class="full missing">
+          {{ lang.isGerman()
+            ? 'Als Compliance-Verantwortlicher sehen Sie das Dokument nur, wenn es Ihnen zugewiesen ist. Diese Kenntnisnahme ist ' + a.acknowledgment_textfield_employee + ' zugewiesen — hier sehen Sie nur die Metadaten.'
+            : 'As compliance officer you only see the document when it is assigned to you. This acknowledgement is assigned to ' + a.acknowledgment_textfield_employee + ' — you only see the metadata here.' }}
+        </p>
+      }
+    </div>
+  } @else if (!loading()) {
+    <p class="missing">
+      {{ fetchError()
+        ? fetchError()
+        : (lang.isGerman() ? 'Kenntnisnahme nicht gefunden.' : 'Acknowledgement not found.') }}
+    </p>
+  }
+}

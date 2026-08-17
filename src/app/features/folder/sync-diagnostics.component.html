@@ -1,0 +1,32 @@
+<div class="strip">
+  <div class="cell">
+    <span class="label">{{ lang.isGerman() ? 'AKTIVE VERSION' : 'ACTIVE VERSION' }}</span>
+    <span class="value">{{ activeVersion() ? activeVersion()!.versionLabel + ' ✓' : '—' }}</span>
+    <span class="note">
+      {{ activeVersion()?.dateModified ? (lang.isGerman() ? 'seit ' : 'since ') + lang.date(activeVersion()!.dateModified!) : '' }}
+    </span>
+  </div>
+  <div class="cell">
+    <span class="label">{{ lang.isGerman() ? 'ZIELGRUPPE' : 'AUDIENCE' }}</span>
+    <span class="value">{{ acks().length }} {{ lang.isGerman() ? 'Personen' : 'people' }}</span>
+    <span class="note">
+      {{ orgUnitCount() }} {{ lang.isGerman() ? 'Teams' : 'teams' }} · {{ userCount() }} {{ lang.isGerman() ? 'direkt' : 'direct' }}
+    </span>
+  </div>
+  <div class="cell">
+    <span class="label">{{ lang.isGerman() ? 'KENNTNISNAHMEN' : 'ACKNOWLEDGEMENTS' }}</span>
+    <span class="value" [class.bad]="stats().overdue > 0">{{ acks().length }}</span>
+    <span class="note">
+      {{ stats().done }} {{ lang.isGerman() ? 'erledigt' : 'done' }} · {{ stats().overdue }} {{ lang.isGerman() ? 'überfällig' : 'overdue' }}
+    </span>
+  </div>
+  <div class="cell">
+    <span class="label">{{ lang.isGerman() ? 'FRIST' : 'DEADLINE' }}</span>
+    <span class="value">{{ dueDate() ? lang.date(dueDate()!) : '—' }}</span>
+    <span class="note">
+      {{ activeVersion()?.dateModified
+        ? (lang.isGerman() ? 'seit ' : 'since ') + lang.date(activeVersion()!.dateModified!) + ', ' + deadlineDays() + (lang.isGerman() ? ' Tage' : ' days')
+        : '' }}
+    </span>
+  </div>
+</div>

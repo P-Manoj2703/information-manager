@@ -5,6 +5,6 @@ import { ShellComponent } from './layout/shell.component';
   selector: 'im-root',
   standalone: true,
   imports: [ShellComponent],
-  template: '<im-shell />'
+  templateUrl: './app.component.html'
 })
 export class AppComponent {}

@@ -1,0 +1,6 @@
+<div class="bar" role="group">
+  @for (c of chips(); track c.id) {
+    <button type="button" [class.on]="value() === c.id"
+            [attr.aria-pressed]="value() === c.id" (click)="toggle(c.id)">{{ c.label }}</button>
+  }
+</div>

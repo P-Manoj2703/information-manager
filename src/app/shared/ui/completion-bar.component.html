@@ -1,0 +1,12 @@
+<div class="track" role="img" [attr.aria-label]="aria()">
+  <div class="done" [style.width.%]="pct('done')"></div>
+  <div class="pending" [style.width.%]="pct('pending')"></div>
+  <div class="overdue" [style.width.%]="pct('overdue')"></div>
+</div>
+@if (showLegend()) {
+  <div class="legend">
+    <span><i class="swatch done"></i>{{ lang.isGerman() ? 'Erledigt' : 'Done' }} {{ data().done }}</span>
+    <span><i class="swatch pending"></i>{{ lang.isGerman() ? 'Ausstehend' : 'Pending' }} {{ data().pending }}</span>
+    <span><i class="swatch overdue"></i>{{ lang.isGerman() ? 'Überfällig' : 'Overdue' }} {{ data().overdue }}</span>
+  </div>
+}

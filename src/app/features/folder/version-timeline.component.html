@@ -1,0 +1,30 @@
+@if (loading()) {
+  <p class="empty">{{ lang.isGerman() ? 'Versionen werden geladen…' : 'Loading versions…' }}</p>
+} @else if (!versions().length) {
+  <p class="empty">{{ lang.isGerman() ? 'Noch keine Dokumentversion.' : 'No document versions yet.' }}</p>
+} @else {
+  <ol>
+    @for (v of versions(); track v.id; let last = $last) {
+      <li>
+        <span class="marker">
+          <span class="dot" [class.on]="v.status === 'Active'"></span>
+          @if (!last) { <span class="line"></span> }
+        </span>
+        <a class="body" [routerLink]="['/folders', folderId(), 'versions', v.id]">
+          <span><b class="id">{{ v.versionLabel }}</b>
+            <im-status-badge [status]="v.status" [dot]="false" /></span>
+          @if (v.description) { <span class="description">{{ v.description }}</span> }
+          <span class="range tabular">
+            @if (!v.dateModified) {
+              —
+            } @else if (v.validUntil) {
+              {{ lang.date(v.dateModified) }} — {{ lang.date(v.validUntil) }}
+            } @else {
+              {{ lang.isGerman() ? 'Gültig ab ' : 'Valid from ' }}{{ lang.date(v.dateModified) }}
+            }
+          </span>
+        </a>
+      </li>
+    }
+  </ol>
+}

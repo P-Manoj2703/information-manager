@@ -60,76 +60,8 @@ interface AckRow {
   selector: 'im-estate-overview',
   standalone: true,
   imports: [RouterLink, RecordListDirective, StatusBadgeComponent, CompletionBarComponent, FilterChipsComponent],
-  styles: [`
-    .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
-    .bar .spacer { margin-left: auto; }
-    .bar .count { font-size: 13px; color: var(--fg-3); }
-    .search-bar { display: flex; margin-bottom: 20px; }
-    .search { font: inherit; font-size: 13px; padding: 8px 14px; border: 1px solid var(--border-1);
-              border-radius: var(--radius-pill); min-width: 240px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
-    .tile { background: #fff; border: 1px solid var(--border-1); border-radius: var(--radius-card);
-            padding: 20px 22px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--shadow-xs);
-            transition: transform 120ms ease, box-shadow 120ms ease;
-            &:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); } }
-    .badges { display: flex; gap: 8px; flex-wrap: wrap; }
-    .pill { display: inline-flex; align-items: center; border-radius: var(--radius-pill); padding: 3px 10px;
-            font-size: 12px; font-weight: 600; white-space: nowrap; background: var(--bg-3); color: var(--fg-2); }
-    h2 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.35; }
-    .meta { font-size: 12px; color: var(--fg-3); }
-    .foot { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 12px; }
-    .foot .pct { color: var(--fg-2); font-weight: 600; }
-    .foot .trailing { color: var(--fg-3); text-align: right; }
-    .foot .trailing--danger { color: var(--danger); font-weight: 600; }
-    .empty { text-align: center; color: var(--fg-3); padding: 48px; grid-column: 1/-1; }
-  `],
-  template: `
-    <ng-container [libEcapRuntimeRecordList]="folderPayload()"
-      (apiResponseEvent)="onFolders($event)" (apiErrorEvent)="onFoldersError($event)">
-    </ng-container>
-    <ng-container [libEcapRuntimeRecordList]="ackPayload()"
-      (apiResponseEvent)="onAcks($event)" (apiErrorEvent)="onAcksError($event)">
-    </ng-container>
-
-
-    <div class="bar">
-      <im-filter-chips [chips]="chips()" [(value)]="confidentialityFilter" />
-      <span class="spacer"></span>
-      <span class="count">
-        {{ visibleFolders().length }} {{ lang.isGerman() ? 'Mappen' : 'folders' }}
-      </span>
-    </div>
-    <div class="search-bar">
-      <input type="text" class="search" [value]="nameSearch()" (input)="nameSearch.set($any($event.target).value)"
-             [placeholder]="lang.isGerman() ? 'Nach Name suchen…' : 'Search by name…'">
-    </div>
-
-    <div class="grid">
-      @for (f of visibleFolders(); track f.id) {
-        <a class="tile" routerLink="/acknowledgements" [queryParams]="{ folder: f.name }">
-          <div class="badges">
-            <im-status-badge [status]="f.acknowledgmentStatus" />
-            @if (f.confidentiality) { <span class="pill">{{ f.confidentiality }}</span> }
-          </div>
-          <h2>{{ f.name }}</h2>
-          <span class="meta">{{ metaLine(f) }}</span>
-          <im-completion-bar [data]="stats(f.name)" [showLegend]="false" />
-          <div class="foot">
-            <span class="pct">{{ stats(f.name).pct }}% {{ lang.isGerman() ? 'bestätigt' : 'confirmed' }}</span>
-            <span class="trailing" [class.trailing--danger]="oldestOverdueDays(f.name) > 0">{{ trailing(f) }}</span>
-          </div>
-        </a>
-      } @empty {
-        <p class="empty">
-          {{ loading()
-            ? (lang.isGerman() ? 'Wird geladen…' : 'Loading…')
-            : confidentialityFilter() !== 'all'
-              ? (lang.isGerman() ? 'Keine Informationsmappen mit dieser Vertraulichkeit.' : 'No information folders with this confidentiality level.')
-              : (lang.isGerman() ? 'Noch keine Informationsmappen.' : 'No information folders yet.') }}
-        </p>
-      }
-    </div>
-  `
+  templateUrl: './estate-overview.component.html',
+  styleUrl: './estate-overview.component.scss'
 })
 export class EstateOverviewComponent {
   readonly lang = inject(LanguageService);

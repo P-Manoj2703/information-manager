@@ -1,0 +1,206 @@
+<section class="card">
+  @if (compact()) {
+    <div class="summary">
+      <header class="summary__head">
+        <h2>{{ lang.isGerman() ? 'Zielgruppe' : 'Audience' }}</h2>
+        <span class="badge">{{ totalPeople() }} {{ lang.isGerman() ? 'Personen' : 'people' }}</span>
+      </header>
+      @for (u of topLevelOrgUnits(); track u.recordId) {
+        <div class="summary__row">
+          <div>
+            <strong>{{ u.teamName }}</strong>
+            <small>
+              @if (u.includeTeamHierarchy) {
+                {{ memberCountFor(u.teamId) }} {{ lang.isGerman() ? 'direkt' : 'direct' }}
+                @if (subTeamMemberCount(u.teamId)) {
+                  · {{ subTeamMemberCount(u.teamId) }} {{ lang.isGerman() ? 'aus Unterteams' : 'from sub-teams' }}
+                }
+              } @else {
+                {{ memberCountFor(u.teamId) }} {{ lang.isGerman() ? 'Mitglieder' : 'members' }}
+              }
+            </small>
+          </div>
+          <span class="tag">{{ u.includeTeamHierarchy ? (lang.isGerman() ? 'HIERARCHIE' : 'HIERARCHY') : (lang.isGerman() ? 'ÜBER TEAM' : 'VIA TEAM') }}</span>
+        </div>
+      }
+      @if (linkedEmployees().length) {
+        <div class="summary__row">
+          <div>
+            <strong>{{ linkedEmployees().length }} {{ lang.isGerman() ? 'Einzelpersonen' : 'individual people' }}</strong>
+            <small>{{ lang.isGerman() ? 'Manuell hinzugefügt' : 'Added manually' }}</small>
+          </div>
+          <span class="tag">{{ lang.isGerman() ? 'DIREKT' : 'DIRECT' }}</span>
+        </div>
+      }
+      @if (audienceLoading()) {
+        <p class="hint">{{ lang.isGerman() ? 'Wird geladen…' : 'Loading…' }}</p>
+      } @else if (!topLevelOrgUnits().length && !linkedEmployees().length) {
+        <p class="hint">{{ lang.isGerman() ? 'Noch keine Zielgruppe.' : 'No audience yet.' }}</p>
+      }
+      <button type="button" class="link-btn" (click)="showFullRoster.emit()">
+        {{ lang.isGerman() ? 'Vollständige Liste anzeigen' : 'Show full roster' }}
+      </button>
+    </div>
+  } @else {
+  <div class="layout">
+    <div class="main">
+      <header class="head">
+        <div>
+          <h2>{{ lang.isGerman() ? 'Zielgruppe' : 'Audience' }}</h2>
+          <p>{{ lang.isGerman()
+            ? 'Teams, einzelne Personen und Verteilervorlagen an einer Stelle.'
+            : 'Teams, individual people and distribution templates in one place.' }}</p>
+        </div>
+      </header>
+
+      <div class="panels">
+        <div class="panel-col">
+        <div class="stat" aria-live="polite">
+          <span class="eyebrow">{{ lang.isGerman() ? 'Organisationseinheiten' : 'Organisational units' }}</span>
+          <strong>{{ linkedOrgUnits().length }}</strong>
+        </div>
+        <div class="panel">
+      <header>
+        <span class="panel__title">{{ lang.isGerman() ? 'Organisationseinheiten' : 'Organisational units' }}
+          <span class="panel__count">{{ linkedOrgUnits().length }}</span></span>
+        <button type="button" class="plus-btn" (click)="showTeamPicker.set(!showTeamPicker())">
+          <span class="plus">+</span> {{ lang.isGerman() ? 'Hinzufügen' : 'Add' }}
+        </button>
+      </header>
+
+      @if (orgUnitError()) { <p class="error">{{ orgUnitError() }}</p> }
+
+      @for (u of topLevelOrgUnits(); track u.recordId) {
+        <div class="row">
+          <div class="row__main">
+            <div class="row__name">
+              <strong>{{ u.teamName }}</strong>
+              <small>
+                @if (u.includeTeamHierarchy) {
+                  {{ memberCountFor(u.teamId) }} {{ lang.isGerman() ? 'direkt' : 'direct' }}
+                  @if (subTeamMemberCount(u.teamId)) {
+                    · {{ subTeamMemberCount(u.teamId) }} {{ lang.isGerman() ? 'aus Unterteams' : 'from sub-teams' }}
+                  }
+                } @else {
+                  {{ memberCountFor(u.teamId) }} {{ lang.isGerman() ? 'Mitglieder' : 'members' }}
+                }
+              </small>
+            </div>
+            <label class="switch switch--locked" [attr.title]="lang.isGerman() ? 'Nur bei Hinzufügen wählbar' : 'Only selectable when adding'">
+              <input type="checkbox" class="switch__input" [checked]="u.includeTeamHierarchy" disabled>
+              <span class="switch__track" [class.switch__track--on]="u.includeTeamHierarchy">
+                <span class="switch__thumb"></span>
+              </span>
+              <span class="switch__label">{{ lang.isGerman() ? 'Hierarchie' : 'Hierarchy' }}</span>
+            </label>
+            <button type="button" class="x" (click)="removeOrgUnit(u.recordId)" aria-label="remove">×</button>
+          </div>
+          @if (u.includeTeamHierarchy && linkedDescendantsOf(u.teamId).length) {
+            <ul class="tree">
+              @for (c of linkedDescendantsOf(u.teamId); track c.id) {
+                <li>
+                  <span>{{ c.name }}</span>
+                  <span class="tree__count">{{ lang.isGerman() ? 'auto-verknüpft' : 'auto-linked' }} · {{ memberCountFor(c.id) }}</span>
+                </li>
+              }
+            </ul>
+          }
+        </div>
+      }
+
+      @if (showTeamPicker()) {
+        <div class="picker">
+          <input type="text" class="lookup__input" [value]="teamQuery()"
+                 (input)="teamQuery.set($any($event.target).value)"
+                 [placeholder]="lang.isGerman() ? 'Team suchen…' : 'Search teams…'">
+          <label class="switch">
+            <input type="checkbox" class="switch__input" [checked]="newUnitIncludeHierarchy()"
+                   (change)="newUnitIncludeHierarchy.set(!newUnitIncludeHierarchy())">
+            <span class="switch__track"><span class="switch__thumb"></span></span>
+            <span class="switch__label">{{ lang.isGerman() ? 'Team-Hierarchie einschließen' : 'Include team hierarchy' }}</span>
+          </label>
+          @if (orgTeamsLoading()) {
+            <span class="lookup__empty">{{ lang.isGerman() ? 'Teams werden geladen…' : 'Loading teams…' }}</span>
+          }
+          <div class="add">
+            @for (t of addableRealTeams(); track t.id) {
+              <button type="button" (click)="addOrgUnit(t.id, t.name)">+ {{ t.name }}</button>
+            } @empty {
+              @if (!orgTeamsLoading() && teamQuery().trim()) {
+                <span class="lookup__empty">{{ lang.isGerman() ? 'Keine Teams gefunden' : 'No teams found' }}</span>
+              }
+            }
+          </div>
+        </div>
+      }
+    </div>
+    </div>
+
+    <div class="panel-col">
+    <div class="stat" aria-live="polite">
+      <span class="eyebrow">{{ lang.t('users') }}</span>
+      <strong>{{ linkedEmployees().length }}</strong>
+    </div>
+    <div class="panel">
+      <header>
+        <span class="panel__title">{{ lang.t('users') }}
+          <span class="panel__count">{{ linkedEmployees().length }}</span></span>
+        <button type="button" class="plus-btn" (click)="showUserPicker.set(!showUserPicker())">
+          <span class="plus">+</span> {{ lang.isGerman() ? 'Hinzufügen' : 'Add' }}
+        </button>
+      </header>
+
+      @if (employeeError()) { <p class="error">{{ employeeError() }}</p> }
+
+      @if (showUserPicker()) {
+        <div class="picker">
+          <input type="text" class="lookup__input" [value]="userQuery()"
+                 (input)="userQuery.set($any($event.target).value)"
+                 [placeholder]="lang.isGerman() ? 'Person suchen…' : 'Search people…'">
+          @if (orgUsersLoading()) {
+            <span class="lookup__empty">{{ lang.isGerman() ? 'Personen werden geladen…' : 'Loading people…' }}</span>
+          }
+          <div class="lookup__results">
+            @for (u of addableRealUsers(); track u.id) {
+              <button type="button" (click)="addEmployee(u.id, u.label)">+ {{ u.label }}</button>
+            } @empty {
+              @if (!orgUsersLoading() && userQuery().trim()) {
+                <span class="lookup__empty">{{ lang.isGerman() ? 'Keine Treffer' : 'No matches' }}</span>
+              }
+            }
+          </div>
+        </div>
+      }
+
+      <div class="roster">
+        @for (e of linkedEmployees(); track e.recordId) {
+          <div class="person">
+            <div class="person__id">
+              <span class="person__name">{{ e.userLabel }}</span>
+            </div>
+            <button type="button" class="x" (click)="removeEmployee(e.recordId)" aria-label="remove">×</button>
+          </div>
+        }
+      </div>
+      </div>
+    </div>
+    </div>
+    </div>
+
+    <aside class="sidebar">
+      @if (templateError()) { <p class="error">{{ templateError() }}</p> }
+      @if (templateApplying()) {
+        <p class="hint">{{ lang.isGerman() ? 'Wird angewendet…' : 'Applying…' }}</p>
+      }
+      <im-template-picker [templates]="templates()" [appliedIds]="appliedTemplateIds()"
+                           [loading]="templatesLoading()" (apply)="applyTemplate($event)" (remove)="removeTemplate($event)" />
+    </aside>
+  </div>
+
+  <footer>
+    <span class="spacer"></span>
+    <button type="button" class="ghost" (click)="back.emit()">{{ lang.isGerman() ? 'Zurück' : 'Back' }}</button>
+    <button class="primary" (click)="save()">{{ lang.isGerman() ? 'Weiter' : 'Continue' }}</button>
+  </footer>
+  }
+</section>

@@ -1,0 +1,14 @@
+<div class="tree">
+  @for (n of nodes(); track n.team.id) {
+    <div class="node" [style.padding-left.px]="20 + n.depth * 26">
+      <span class="name">{{ n.team.information_manager_teams_textfield_name }}</span>
+      <span class="members">{{ n.team.memberCount }}</span>
+      @if (session.canEditUsersAndTeams()) {
+        <button type="button" class="del" (click)="confirmDelete(n.team)">{{ lang.isGerman() ? 'Löschen' : 'Delete' }}</button>
+      }
+    </div>
+  }
+</div>
+<p class="note">{{ lang.isGerman()
+  ? 'Beim Löschen werden Unterteams und Ordner-Verknüpfungen geprüft. Ein Team kann nicht sein eigener Vorgänger sein.'
+  : 'Deleting checks sub-teams and folder links. A team cannot be its own ancestor.' }}</p>

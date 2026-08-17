@@ -13,50 +13,8 @@ export interface DistributionTemplateOption { id: string; name: string; }
 @Component({
   selector: 'im-template-picker',
   standalone: true,
-  styleUrl: './template-picker.component.scss',
-  template: `
-    <div class="sidebar__head">
-      <span class="sidebar__title">{{ lang.isGerman() ? 'Verteilervorlage' : 'Distribution template' }}</span>
-      <button type="button" class="plus-btn" (click)="show.set(!show())">
-        <span class="plus">+</span> {{ lang.isGerman() ? 'Hinzufügen' : 'Add' }}
-      </button>
-    </div>
-    <p class="sidebar__note">{{ lang.isGerman()
-      ? 'Kopiert Mitglieder einmalig in diesen Ordner'
-      : 'Copies members into this folder once' }}</p>
-
-    @if (show()) {
-      <div class="picker">
-        <input type="text" class="lookup__input" [value]="query()"
-               (input)="query.set($any($event.target).value)"
-               [placeholder]="lang.isGerman() ? 'Vorlage suchen…' : 'Search templates…'">
-        @if (loading()) {
-          <span class="lookup__empty">{{ lang.isGerman() ? 'Vorlagen werden geladen…' : 'Loading templates…' }}</span>
-        }
-        <div class="add">
-          @for (t of options(); track t.id) {
-            <button type="button" (click)="pick(t.id)">{{ t.name }}</button>
-          } @empty {
-            @if (!loading()) {
-              <span class="lookup__empty">{{ lang.isGerman() ? 'Keine Vorlagen gefunden' : 'No templates found' }}</span>
-            }
-          }
-        </div>
-      </div>
-    }
-
-    @if (appliedTemplates().length) {
-      <div class="sidebar__chips">
-        @for (t of appliedTemplates(); track t.id) {
-          <span class="chip">
-            {{ t.name }}
-            <button type="button" class="chip__remove" (click)="remove.emit(t.id)"
-                    [attr.aria-label]="lang.isGerman() ? 'Entfernen' : 'Remove'">×</button>
-          </span>
-        }
-      </div>
-    }
-  `
+  templateUrl: './template-picker.component.html',
+  styleUrl: './template-picker.component.scss'
 })
 export class TemplatePickerComponent {
   readonly lang = inject(LanguageService);

@@ -1,0 +1,18 @@
+:host { display: block; }
+.frame { background: #fff; border: 1px solid var(--border-1); border-radius: var(--radius-card); overflow: hidden; }
+.bar { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-bottom: 1px solid var(--border-1); }
+.bar strong { font-size: 14px; flex: 0 0 auto; }
+.bar .doc-pill {
+  background: var(--bg-mint); color: var(--escriba-teal-700); font-size: 13px; font-weight: 600;
+  padding: 4px 12px; border-radius: var(--radius-pill); flex: 0 1 auto; max-width: 100%; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bar .spacer { margin-left: auto; }
+.ghost {
+  border: 1px solid var(--border-2); background: #fff; color: var(--fg-2); cursor: pointer; text-decoration: none;
+  font: inherit; font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+.empty { padding: 32px; text-align: center; color: var(--fg-3); font-size: 13px; }
+.preview__frame { width: 100%; height: 70vh; border: 0; display: block; }
+.preview__status { padding: 32px; text-align: center; color: var(--fg-3); font-size: 13px; }

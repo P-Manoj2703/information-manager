@@ -1,0 +1,86 @@
+<section class="card">
+    <h2><span class="step-num">4</span> · {{ lang.isGerman() ? 'Veröffentlichen' : 'Publish' }}</h2>
+
+    <ul class="checklist">
+      <li>
+        <span class="status" [class.status--warn]="!versionLabel()">{{ versionLabel() ? '✓' : '!' }}</span>
+        <span class="label">{{ lang.isGerman() ? 'Aktive Dokumentversion vorhanden' : 'Active document version present' }}</span>
+        <span class="value">{{ versionLabel() || '—' }}</span>
+      </li>
+      <li>
+        <span class="status" [class.status--warn]="teamCount() + userCount() === 0">{{ teamCount() + userCount() > 0 ? '✓' : '!' }}</span>
+        <span class="label">{{ lang.isGerman() ? 'Zielgruppe verknüpft' : 'Audience linked' }}</span>
+        <span class="value">{{ teamCount() }} (OU), {{ userCount() }} {{ lang.isGerman() ? 'Benutzer' : 'Users' }}</span>
+      </li>
+      <li>
+        <span class="status">✓</span>
+        <span class="label">{{ lang.isGerman() ? 'Frist' : 'Deadline' }}</span>
+        <span class="value">{{ deadlineDays() }} {{ lang.isGerman() ? 'Tage' : 'days' }} → {{ targetDate() }}</span>
+      </li>
+      <li>
+        <span class="status status--warn">!</span>
+        <span class="label">{{ lang.isGerman() ? 'Vertraulichkeit geprüft' : 'Confidentiality reviewed' }}</span>
+        <span class="value">{{ confidentialityLevel() }}</span>
+      </li>
+    </ul>
+
+    <footer>
+      <button type="button" class="ghost" (click)="back.emit()">{{ lang.isGerman() ? 'Zurück' : 'Back' }}</button>
+      <span class="spacer"></span>
+      <button class="primary" [disabled]="!versionId()" (click)="showConfirm.set(true)">
+        {{ lang.isGerman() ? 'Version aktivieren' : 'Activate version' }}
+      </button>
+    </footer>
+
+    @if (showConfirm()) {
+      <div class="overlay" (click)="!busy() && showConfirm.set(false)">
+        <div class="modal" (click)="$event.stopPropagation()">
+          <h2>{{ lang.isGerman() ? 'Version aktivieren?' : 'Activate version?' }}</h2>
+          <p>
+            {{ lang.isGerman()
+              ? 'Die Aktivierung erstellt ' + userCount() + ' Kenntnisnahmen und versendet ' + userCount() + ' E-Mails. Empfänger haben ' + deadlineDays() + ' Tage, bis ' + targetDateDMY() + '.'
+              : 'Activating creates ' + userCount() + ' acknowledgements and sends ' + userCount() + ' emails. Recipients have ' + deadlineDays() + ' days, until ' + targetDateDMY() + '.' }}
+          </p>
+          @if (supersedes()) {
+            <p class="warn">
+              {{ lang.isGerman()
+                ? supersededConfirmedCount() + ' Personen haben ' + supersedes() + ' bereits bestätigt und werden erneut gefragt — Kenntnisnahme ist versionsbezogen. Version ' + supersedes() + ' wird gleichzeitig deaktiviert.'
+                : supersededConfirmedCount() + ' people already confirmed ' + supersedes() + ' and will be asked again — acknowledgement is per version. Version ' + supersedes() + ' is deactivated at the same time.' }}
+            </p>
+          }
+          <div class="details">
+            <div class="details__row">
+              <span>{{ lang.isGerman() ? 'Neue Kenntnisnahmen' : 'New acknowledgements' }}</span>
+              <span>{{ userCount() }}</span>
+            </div>
+            @if (supersedes()) {
+              <div class="details__row">
+                <span>{{ lang.isGerman() ? 'Ersetzte Version' : 'Superseded version' }}</span>
+                <span>{{ supersedes() }}</span>
+              </div>
+            }
+            <div class="details__row">
+              <span>{{ lang.isGerman() ? 'Frist' : 'Deadline' }}</span>
+              <span>{{ targetDateDMY() }}</span>
+            </div>
+            <div class="details__row">
+              <span>{{ lang.isGerman() ? 'E-Mail-Vorlage' : 'Email template' }}</span>
+              <span>Acknowledge Notification At Creation</span>
+            </div>
+          </div>
+          @if (activateError()) { <p class="error">{{ activateError() }}</p> }
+          <footer>
+            <button type="button" class="ghost" [disabled]="busy()" (click)="showConfirm.set(false)">
+              {{ lang.isGerman() ? 'Abbrechen' : 'Cancel' }}
+            </button>
+            <span class="spacer"></span>
+            <button class="primary" [disabled]="busy()" (click)="activate()">
+              {{ busy()
+                ? (lang.isGerman() ? 'Wird aktiviert…' : 'Activating…')
+                : (lang.isGerman() ? 'Aktivieren und benachrichtigen' : 'Activate and notify') }}
+            </button>
+          </footer>
+        </div>
+      </div>
+    }
+</section>

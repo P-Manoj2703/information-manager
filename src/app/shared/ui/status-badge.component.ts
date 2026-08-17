@@ -18,24 +18,8 @@ const LABEL: Record<string, [string, string]> = {
 @Component({
   selector: 'im-status-badge',
   standalone: true,
-  styles: [`
-    .badge {
-      display: inline-flex; align-items: center; gap: 6px; border-radius: var(--radius-pill);
-      padding: 3px 10px; font-size: 12px; font-weight: 600; white-space: nowrap;
-    }
-    .dot { width: 6px; height: 6px; border-radius: var(--radius-pill); background: currentColor; }
-    .neutral { background: var(--bg-3); color: var(--fg-2); }
-    .info    { background: #e7f0f7; color: var(--escriba-blue); }
-    .success { background: var(--bg-mint); color: var(--escriba-teal-700); }
-    .warning { background: #fdf6ec; color: var(--warning); }
-    .danger  { background: #fdf0f0; color: var(--danger); }
-  `],
-  template: `
-    <span class="badge" [class]="tone()">
-      @if (dot()) { <span class="dot"></span> }
-      {{ label() }}
-    </span>
-  `
+  templateUrl: './status-badge.component.html',
+  styleUrl: './status-badge.component.scss'
 })
 export class StatusBadgeComponent {
   private readonly lang = inject(LanguageService);

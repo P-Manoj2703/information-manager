@@ -1,0 +1,48 @@
+:host { position: relative; display: inline-flex; }
+.trigger {
+  display: flex; align-items: center; gap: 6px; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--fg-3); padding: 0;
+}
+.trigger.active { color: var(--escriba-teal-700); }
+.chevron { font-size: 9px; }
+
+/* position: fixed, placed via inline top/left computed from the trigger's own
+   bounding rect — escapes the table entirely, so sibling <th> stacking/painting
+   order and the table's own overflow:hidden can never clip or cover it. */
+.panel {
+  position: fixed; z-index: 1000; width: 250px;
+  background: #fff; border: 1px solid var(--border-1); border-radius: var(--radius-card);
+  box-shadow: 0 12px 32px rgba(11,25,45,.16); padding: 16px; display: flex; flex-direction: column; gap: 12px;
+  text-align: left;
+}
+.panel__title {
+  font-size: 12px; font-weight: 700; letter-spacing: .08em; color: var(--escriba-teal-700);
+  padding-bottom: 8px; border-bottom: 2px solid var(--escriba-teal); text-transform: uppercase;
+}
+.panel__search {
+  font: inherit; font-size: 13px; padding: 9px 12px; border: 1px solid var(--border-2);
+  border-radius: var(--radius-input);
+  &:focus-visible { outline: none; border-color: var(--escriba-teal); box-shadow: var(--focus-ring); }
+}
+.panel__list { display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow-y: auto; }
+.panel__row {
+  display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg-1);
+  padding: 6px 4px; border-radius: 6px; cursor: pointer; font-weight: 400;
+  &:hover { background: var(--bg-2); }
+  input { accent-color: var(--escriba-teal-deep); }
+}
+.panel__row--all {
+  font-weight: 600; border-bottom: 1px solid var(--border-1); border-radius: 0;
+  margin-bottom: 4px; padding-bottom: 10px;
+}
+.panel__empty { margin: 0; font-size: 12px; color: var(--fg-3); padding: 6px 4px; }
+.panel__footer { display: flex; align-items: center; gap: 10px; padding-top: 8px; border-top: 1px solid var(--border-1); }
+.panel__count { font-size: 12px; color: var(--fg-3); white-space: nowrap; }
+.panel__reset {
+  margin-left: auto; border: 1px solid var(--border-2); background: #fff; color: var(--fg-2); cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: var(--radius-pill);
+}
+.panel__apply {
+  border: 0; background: var(--escriba-teal); color: var(--navy-900); cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600; padding: 7px 14px; border-radius: var(--radius-pill);
+}

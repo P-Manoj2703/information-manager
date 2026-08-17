@@ -1,0 +1,19 @@
+<div class="bar">
+  <im-filter-chips [chips]="chips()" [(value)]="filter" />
+  <span class="spacer"></span>
+  @if (session.canEditUsersAndTeams()) {
+    <button type="button" class="primary">{{ lang.isGerman() ? 'Neuer Benutzer' : 'New user' }}</button>
+  }
+</div>
+<table>
+  <thead><tr><th>Name</th><th>E-Mail</th><th>{{ lang.t('status') }}</th></tr></thead>
+  <tbody>
+    @for (u of rows(); track u.id) {
+      <tr><td>{{ u.firstName }} {{ u.lastName }}</td><td>{{ u.email }}</td>
+          <td>{{ u.active ? lang.t('active') : lang.t('inactive') }}</td></tr>
+    }
+  </tbody>
+</table>
+<p class="note">{{ lang.isGerman()
+  ? 'Löschen ist dem Systemadministrator vorbehalten — die Aktion wird hier nicht angezeigt.'
+  : 'Deletion is reserved for the system administrator — the action is not rendered here.' }}</p>

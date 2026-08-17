@@ -1,0 +1,19 @@
+<button type="button" class="trigger" [class.open]="open()" [disabled]="disabled()" (click)="toggleOpen()">
+  <span class="trigger__text" [class.placeholder]="!value().length">{{ closedLabel() }}</span>
+  <span class="caret">▾</span>
+</button>
+@if (open()) {
+  <div class="panel" role="listbox">
+    <button type="button" class="row row--bulk" (click)="selectAll()">
+      <span class="mark">✓</span> Select all
+    </button>
+    <button type="button" class="row row--bulk divider" (click)="deselectAll()">
+      <span class="mark">✕</span> Deselect all
+    </button>
+    @for (o of options(); track o) {
+      <button type="button" class="row" role="option" [attr.aria-selected]="isSelected(o)" (click)="toggle(o)">
+        <span class="mark">{{ isSelected(o) ? '✓' : '' }}</span> {{ o }}
+      </button>
+    }
+  </div>
+}

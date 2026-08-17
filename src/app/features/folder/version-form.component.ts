@@ -14,31 +14,8 @@ import { ActivateDialogComponent } from './activate-dialog.component';
   selector: 'im-version-form',
   standalone: true,
   imports: [RouterLink, VersionUploadComponent, ActivateDialogComponent],
-  styles: [`
-    .back { display:inline-block; margin-bottom:16px; font-size:13px; color:var(--fg-3); text-decoration:none;
-            &:hover { color:var(--escriba-teal-700); } }
-    .warn { background:#fdf6ec; border:1px solid #f6e0c0; border-radius:var(--radius-input);
-            padding:14px 18px; font-size:13px; color:#8a5a20; line-height:1.6; margin-bottom:18px; max-width:900px; }
-  `],
-  template: `
-    <a class="back" [routerLink]="['/folders', id()]">← {{ folderName() }}</a>
-
-    <p class="warn">
-      {{ lang.isGerman()
-        ? 'Beim Aktivieren wird die bisherige Version deaktiviert, ihre Kenntnisnahmen werden auf „Nicht mehr erforderlich" gesetzt und die gesamte Zielgruppe erhält neue Aufgaben mit frischer Frist — auch Personen, die bereits bestätigt haben.'
-        : 'On activation the current version is deactivated, its acknowledgements are set to Obsolete, and the whole audience receives new tasks with a fresh deadline — including people who already confirmed.' }}
-    </p>
-
-    @if (!versionRecordId()) {
-      <im-version-upload [folderId]="id()" [folderName]="folderName()" (continue)="onVersionSaved($event)" (back)="goBack()" />
-    } @else {
-      <im-activate-dialog [folderId]="id()" [versionId]="versionRecordId()"
-                           [teamCount]="orgUnitCount()" [userCount]="userCount()"
-                           [confidentialityLevel]="confidentialityLevel()"
-                           [deadlineDays]="14" [supersedes]="activeVersionLabel()" [supersededConfirmedCount]="supersededConfirmedCount()"
-                           (back)="versionRecordId.set('')" />
-    }
-  `
+  templateUrl: './version-form.component.html',
+  styleUrl: './version-form.component.scss'
 })
 export class VersionFormComponent {
   private readonly http = inject(HttpClient);

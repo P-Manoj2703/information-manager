@@ -25,54 +25,8 @@ export function documentDownloadUrl(versionId: string, documentId: string): stri
 @Component({
   selector: 'im-pdf-viewer',
   standalone: true,
-  styles: [`
-    :host { display: block; }
-    .frame { background: #fff; border: 1px solid var(--border-1); border-radius: var(--radius-card); overflow: hidden; }
-    .bar { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-bottom: 1px solid var(--border-1); }
-    .bar strong { font-size: 14px; flex: 0 0 auto; }
-    .bar .doc-pill {
-      background: var(--bg-mint); color: var(--escriba-teal-700); font-size: 13px; font-weight: 600;
-      padding: 4px 12px; border-radius: var(--radius-pill); flex: 0 1 auto; max-width: 100%; min-width: 0;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .bar .spacer { margin-left: auto; }
-    .ghost {
-      border: 1px solid var(--border-2); background: #fff; color: var(--fg-2); cursor: pointer; text-decoration: none;
-      font: inherit; font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: var(--radius-pill);
-      white-space: nowrap;
-    }
-    .empty { padding: 32px; text-align: center; color: var(--fg-3); font-size: 13px; }
-    .preview__frame { width: 100%; height: 70vh; border: 0; display: block; }
-    .preview__status { padding: 32px; text-align: center; color: var(--fg-3); font-size: 13px; }
-  `],
-  template: `
-    <div class="frame">
-      <div class="bar">
-        <strong>{{ lang.isGerman() ? 'Dokument' : 'Document' }}</strong>
-        @if (previewName()) {
-          <span class="doc-pill">{{ previewName() }}</span>
-        }
-        <span class="spacer"></span>
-        @if (canDownloadAll() && documents().length > 0) {
-          <button type="button" class="ghost" (click)="downloadAll()">{{ lang.t('downloadAll') }}</button>
-        }
-      </div>
-
-      @if (documentsLoading()) {
-        <p class="empty">{{ lang.isGerman() ? 'Wird geladen…' : 'Loading…' }}</p>
-      } @else if (!documents().length) {
-        <p class="empty">
-          {{ lang.isGerman() ? 'Für diese Version wurde noch kein Dokument hochgeladen.' : 'No document has been uploaded for this version yet.' }}
-        </p>
-      } @else if (previewError()) {
-        <p class="preview__status">{{ previewError() }}</p>
-      } @else if (previewUrl()) {
-        <iframe class="preview__frame" [src]="previewUrl()"></iframe>
-      } @else {
-        <p class="preview__status">{{ lang.isGerman() ? 'Wird geladen…' : 'Loading…' }}</p>
-      }
-    </div>
-  `
+  templateUrl: './pdf-viewer.component.html',
+  styleUrl: './pdf-viewer.component.scss'
 })
 export class PdfViewerComponent {
   private readonly http = inject(HttpClient);
